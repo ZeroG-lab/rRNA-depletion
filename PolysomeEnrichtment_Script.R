@@ -65,3 +65,30 @@ setwd("Y:/Omics/RiboSeq/PolysomeEnrichment") #switch back to original working di
 #run in Ubuntu shell because it's not working with the system("wsl ...") command,  
 # cd /mnt/y/Omics/RiboSeq/PolysomeEnrichment/ #set working directory
 # multiqc . -o MultiQC/ #performing MultiQC analysis with data from working directory, MultiQC report will be saved in the defined output directory 
+
+# STAR DATA IMPORT ###########################################################################################
+
+#Set working directory of data to be analyzed
+setwd("Y:/Omics/RiboSeq/PolysomeEnrichment/")
+
+#Set strandedness of the library (influences which counts to read from STAR count files)
+# 2 = unstranded
+# 3 = 1st read strand (stranded = yes)
+# 4 = 2nd read strand (stranded = reverse)
+strnd <- 2
+
+#Read the counts of each samples ReadsPerGene file and cbind them
+for (i in list.files("./STAR_Output/", pattern = "ReadsPerGene", full.names = TRUE)) {
+  temp <- read.table(i)
+  head(temp)
+  temp <- temp[-c(1:4),]
+  
+  if(grep(i, list.files("./STAR_Output/", pattern = "ReadsPerGene", full.names = TRUE)) == 1){
+    STAR.counts <- data.frame(temp[,strnd])
+    row.names(STAR.counts) <- temp[,1]
+  }else{
+    STAR.counts <- cbind(STAR.counts, temp[,strnd])
+    colnames(STAR.counts) <- gsub("ReadsPerGene.*$","",list.files("./STAR_Output/", pattern = "ReadsPerGene")[1:length(colnames(STAR.counts))])
+  }
+  rm(temp,i)
+}
