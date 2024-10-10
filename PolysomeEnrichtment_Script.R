@@ -92,3 +92,14 @@ for (i in list.files("./STAR_Output/", pattern = "ReadsPerGene", full.names = TR
   }
   rm(temp,i)
 }
+
+# BUILD METADATA ______________________________________________________________________________________
+
+#Generate sample table containing experiment information 
+sample.table <- data.frame(sample = colnames(STAR.counts))
+rownames(sample.table) <- sample.table$sample
+sample.table$treatment <- rep(c("Ctrl", "NAA"), each = 4)
+sample.table$condition <- rep(c("Polysomes", "Total RNA"), each = 8)
+sample.table$replicate <- gsub("^.*_NAA_", "", sample.table$sample)
+sample.table$replicate <- gsub("^.*_Ctrl_", "", sample.table$replicate)
+sample.table$replicate <- gsub("\\.$", "", sample.table$replicate)
