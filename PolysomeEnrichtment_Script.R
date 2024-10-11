@@ -259,3 +259,122 @@ for (l in c(1:3)) {
   #Save PCA plot
   ggsave(filename = paste0("Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/PCA_", l+(l-1), "+", l+l, ".pdf"), width = 12, height = 12, units = "cm")
 }
+
+
+# DIFFERENTIAL GENE EXPRESSION - NAA Samples ####################################################################
+
+#Run DESeq2 on the dataset
+dds.NAA <- DESeq(dds.NAA)
+
+#Normalize counts
+dds.NAA <- estimateSizeFactors(dds.NAA)
+
+#Write counts to file
+write.csv(STAR.counts, "counts_NAA.csv", quote = FALSE)
+#Write normalized counts to file
+write.csv(counts(dds.NAA, normalized = TRUE), "counts_NAA_normalized.csv", quote = FALSE)
+
+#Extract results with applied filters for p-value and log2 foldchange threshold
+#Set p-value (set the variable here, so the results function and any manual filtering later rely on the same value)
+p.val <- 0.05
+fc.limit <- 1
+
+#Extract results (contrast needs 3 values: Which independent variable to use, Numerator=Treatment, Denominator=Control)
+res_NAA <- results(dds.NAA, alpha = p.val, contrast = c("treatment", "NAA", "Ctrl"))
+
+#Print summary
+summary(res_NAA)
+
+#Convert to dataframe
+res_NAA_df <- data.frame(res_NAA)
+
+#Write results to file
+write.csv(res_NAA_df, "Foldchanges_NAA.csv", quote = FALSE)
+
+#Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
+genes.sig <- subset(res_NAA_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
+write.csv(genes.sig, "Foldchanges_sig_NAA.csv", quote = FALSE)
+write.table(genes.sig, "Y:/Omics/RiboSeq/PolysomeEnrichment/Significantly_regulated_genes.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
+
+#Add Metadata to significantly regulated genes and write out
+genes.sig.meta <- genes.sig
+genes.sig.meta$ID <- rownames(genes.sig.meta)
+Gene.Metadata <- read.table("Y:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
+genes.sig.meta <- merge(genes.sig.meta, Gene.Metadata, all.x = TRUE, all.y = FALSE)
+
+#Build plot of Auxin-induced gene families
+genes.sig.auxin <- data.frame("Family" = factor(rep(c("SAUR", "Aux/IAA", "GH3", "ARF"), each = 3), levels = c("SAUR", "Aux/IAA", "GH3", "ARF")),
+                              "Number" = c(
+                                length(grep("SAUR", Gene.Metadata$Symbol, value = TRUE))-length(grep("SAUR", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE))-length(grep("SAUR", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
+                                length(grep("SAUR", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE)),
+                                length(grep("SAUR", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
+                                length(grep("^IAA| IAA", Gene.Metadata$Symbol, value = TRUE))-length(grep("^IAA| IAA", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE))-length(grep("^IAA| IAA", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
+                                length(grep("^IAA| IAA", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE)),
+                                length(grep("^IAA| IAA", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
+                                length(grep("GH3\\.", Gene.Metadata$Symbol, value = TRUE))- length(grep("GH3\\.", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE))-length(grep("GH3\\.", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
+                                length(grep("GH3\\.", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE)),
+                                length(grep("GH3\\.", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
+                                length(grep("^ARF[0-9]| ARF[0-9]", Gene.Metadata$Symbol, value = TRUE))-length(grep("^ARF[0-9]| ARF[0-9]", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE))-length(grep("^ARF[0-9]| ARF[0-9]", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
+                                length(grep("^ARF[0-9]| ARF[0-9]", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE)),
+                                length(grep("^ARF[0-9]| ARF[0-9]", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE))
+                              ),
+                              "Regulation" = factor(rep(c("None", "Up", "Down"), 4), levels = c("None", "Up", "Down"))
+)
+
+
+ggplot(genes.sig.auxin, aes(Family, Number, fill = Regulation))+
+  geom_col()+
+  scale_fill_manual(values = c("grey80", viridis::inferno(11)[7], viridis::inferno(11)[5]))+
+  ylab("Number of Genes")+
+  xlab("Gene Family")+
+  theme_light(base_size = 9)+
+  theme(axis.text = element_text(color = "black"), legend.position = "right")
+
+#Save plot to file
+ggsave("Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/NAA/AuxGenes.pdf", width = 12, height = 12, units = "cm")
+
+
+#Build Volcano plots
+
+#Define plot colors
+col_down <- viridis::inferno(11)[5]
+col_up <- viridis::inferno(11)[7]
+col_neutral <- "grey80"
+
+#Select data to plot
+plotdata <- res_NAA_df
+
+#Modify dataframe for plotting by adding coloring information
+plotdata$ID <- row.names(plotdata)
+plotdata$color[abs(plotdata$log2FoldChange) > fc.limit] <- 0
+plotdata$color[which(plotdata$padj > p.val)] <- 1
+plotdata$color[which(abs(plotdata$log2FoldChange) < fc.limit)] <- 1
+
+#Plotting volcano plot
+ggplot(plotdata, aes(log2FoldChange, -log10(padj), label = ID, color = log2FoldChange))+
+  geom_point_rast(size = 1)+
+  geom_point_rast(color = col_neutral, alpha = plotdata$color, size = 0.5)+
+  scale_x_continuous(limits = c(-7,7), breaks = seq(-6,6,2))+
+  scale_y_continuous(limits = c(0,25), breaks = seq(0,25,5))+
+  scale_color_viridis_c(option = "inferno", limits = c(-7,7), begin = 0.1, end = 0.9, guide = NULL)+
+  geom_hline(yintercept = -log10(p.val), linetype = 2)+
+  geom_vline(xintercept = c(-fc.limit,fc.limit), linetype = 2)+
+  ggtitle("20 µM NAA 90 min")+
+  xlab("Log2 Foldchange")+
+  ylab("-Log10 adjusted p-value")+
+  annotate("text", x = -5, y = 23, label = length(subset(plotdata, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
+  annotate("text", x = 5, y = 23, label = length(subset(plotdata, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
+  theme_light(base_size = 9)+
+  theme(axis.text = element_text(color = "black"))
+
+#Save volcano plot to file
+ggsave("F:/RiboSeq/ClinoNAA_Experiment/RNAseq/Plots/NAA/Volcano.pdf", width = 7, height = 7, units = "cm")
+
+#//Build MA plots
+
+#Shrink foldchanges of results for better plotting (check lfcshrink help for other types of shrinkage)
+res.shrink <- lfcShrink(dds.NAA, res = res_NAA, type="ashr")
+#Plot MA data
+plotMA(res.shrink, ylim = c(-8,8))
+#Print out plot to file
+dev.print(pdf, "./Plots/NAA_MAplot.pdf")
