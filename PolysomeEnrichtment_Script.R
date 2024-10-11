@@ -24,7 +24,8 @@
 # BiocManager::install("pcaExplorer")
 # BiocManager::install("Rsubread")
 # BiocManager::install("BiocParallel")
-
+#install.packages("MetBrewer")
+#install.packages("paletteer")
 #install_github(repo = "lcalviell/Ribo-seQC")
 
 library("DESeq2")
@@ -51,6 +52,7 @@ library("ggplot2")
 library("ggrastr")
 library("plotly")
 library("VennDiagram") 
+library("paletteer")
 
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # RNA-Seq #####################################################################################################
@@ -330,6 +332,7 @@ ggplot(genes.sig.auxin, aes(Family, Number, fill = Regulation))+
   theme_light(base_size = 9)+
   theme(axis.text = element_text(color = "black"), legend.position = "right")
 
+
 #Save plot to file
 ggsave("Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/NAA/AuxGenes.pdf", width = 12, height = 12, units = "cm")
 
@@ -368,7 +371,7 @@ ggplot(plotdata, aes(log2FoldChange, -log10(padj), label = ID, color = log2FoldC
   theme(axis.text = element_text(color = "black"))
 
 #Save volcano plot to file
-ggsave("F:/RiboSeq/ClinoNAA_Experiment/RNAseq/Plots/NAA/Volcano.pdf", width = 7, height = 7, units = "cm")
+ggsave("Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/NAA/Volcano.pdf", width = 12, height = 12, units = "cm")
 
 #//Build MA plots
 
@@ -377,4 +380,4 @@ res.shrink <- lfcShrink(dds.NAA, res = res_NAA, type="ashr")
 #Plot MA data
 plotMA(res.shrink, ylim = c(-8,8))
 #Print out plot to file
-dev.print(pdf, "./Plots/NAA_MAplot.pdf")
+dev.print(pdf, "Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/NAA/NAA_MAplot.pdf")
