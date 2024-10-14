@@ -296,7 +296,7 @@ write.csv(res_NAA_df, "Foldchanges_NAA.csv", quote = FALSE)
 #Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
 genes.sig <- subset(res_NAA_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
 write.csv(genes.sig, "Foldchanges_sig_NAA.csv", quote = FALSE)
-write.table(genes.sig, "Y:/Omics/RiboSeq/PolysomeEnrichment/Significantly_regulated_genes.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
+#write.table(genes.sig, "Y:/Omics/RiboSeq/PolysomeEnrichment/Significantly_regulated_genes.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
 
 #Add Metadata to significantly regulated genes and write out
 genes.sig.meta <- genes.sig
@@ -381,3 +381,117 @@ res.shrink <- lfcShrink(dds.NAA, res = res_NAA, type="ashr")
 plotMA(res.shrink, ylim = c(-8,8))
 #Print out plot to file
 dev.print(pdf, "Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/NAA/NAA_MAplot.pdf")
+
+
+#Individual analysis for each condition depending on the treatment ####################################################################################################################################
+# BUILD METADATA FOR CTRL SAMPLES ______________________________________________________________________________________
+
+#Generate sample table containing experiment information 
+Columns_with_Ctrl_tmp <- grep("Ctrl", colnames(STAR.counts),value = TRUE)
+sample.table_Ctrl <- data.frame(sample = Columns_with_Ctrl_tmp)
+rownames(sample.table_Ctrl) <- sample.table_Ctrl$sample 
+sample.table_Ctrl$treatment <- rep(c("Ctrl"), each = 8)
+sample.table_Ctrl$condition <- rep(c("Polysomes", "Total_RNA"), each = 4)
+sample.table_Ctrl$replicate <- gsub("^.*_Ctrl_", "", sample.table_Ctrl$sample)
+
+#Generate subset of the STAR.counts table containing just informations about control samples
+STAR.counts_Ctrl_tmp <- grep("Ctrl", colnames(STAR.counts), value = TRUE)
+STAR.counts_Ctrl <- STAR.counts[, STAR.counts_Ctrl_tmp]
+
+#optional: write sample table to file for export
+#write.table(sample.table, "./sample_table.txt", quote = FALSE, row.names = FALSE)
+
+dds.Ctrl <- DESeqDataSetFromMatrix(STAR.counts_Ctrl,
+                                  colData = sample.table_Ctrl,
+                                  design = ~ replicate+condition) 
+
+# DIFFERENTIAL GENE EXPRESSION FOR CTRL SAMPLES - comparison between Polysome fractions and Total RNA ####################################################################
+
+#Run DESeq2 on the dataset
+dds.Ctrl <- DESeq(dds.Ctrl)
+
+#Normalize counts
+dds.Ctrl <- estimateSizeFactors(dds.Ctrl)
+
+#Write counts to file
+write.csv(STAR.counts_Ctrl, "counts_Ctrl.csv", quote = FALSE)
+#Write normalized counts to file
+write.csv(counts(dds.Ctrl, normalized = TRUE), "counts_Ctrl_normalized.csv", quote = FALSE)
+
+#Extract results with applied filters for p-value and log2 foldchange threshold
+#Set p-value (set the variable here, so the results function and any manual filtering later rely on the same value)
+p.val <- 0.05
+fc.limit <- 1
+
+#Extract results (contrast needs 3 values: Which independent variable to use, Numerator=Treatment, Denominator=Control)
+res_conditions_Ctrl <- results(dds.Ctrl, alpha = p.val, contrast = c("condition", "Polysomes", "Total_RNA"))
+
+#Print summary
+summary(res_conditions_Ctrl)
+
+#Convert to dataframe
+res_conditions_Ctrl_df <- data.frame(res_conditions_Ctrl)
+
+#Write results to file
+write.csv(res_conditions_Ctrl_df, "Foldchanges_Ctrl.csv", quote = FALSE)
+
+#Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
+genes.sig_Ctrl <- subset(res_conditions_Ctrl_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
+write.csv(genes.sig_Ctrl, "Foldchanges_sig_Ctrl.csv", quote = FALSE)
+#write.table(genes.sig, "Y:/Omics/RiboSeq/PolysomeEnrichment/Significantly_regulated_genes.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
+
+# BUILD METADATA FOR NAA SAMPLES ______________________________________________________________________________________
+
+#Generate sample table containing experiment information 
+Columns_with_NAA_tmp <- grep("NAA", colnames(STAR.counts),value = TRUE)
+sample.table_NAA <- data.frame(sample = Columns_with_NAA_tmp)
+rownames(sample.table_NAA) <- sample.table_NAA$sample 
+sample.table_NAA$treatment <- rep(c("NAA"), each = 8)
+sample.table_NAA$condition <- rep(c("Polysomes", "Total_RNA"), each = 4)
+sample.table_NAA$replicate <- gsub("^.*_NAA_", "", sample.table_NAA$sample)
+
+#Generate subset of the STAR.counts table containing just informations about control samples
+STAR.counts_NAA_tmp <- grep("NAA", colnames(STAR.counts), value = TRUE)
+STAR.counts_NAA <- STAR.counts[, STAR.counts_NAA_tmp]
+
+#optional: write sample table to file for export
+#write.table(sample.table, "./sample_table.txt", quote = FALSE, row.names = FALSE)
+
+dds.NAA_samples <- DESeqDataSetFromMatrix(STAR.counts_NAA,
+                                   colData = sample.table_NAA,
+                                   design = ~ replicate+condition) 
+
+# DIFFERENTIAL GENE EXPRESSION FOR NAA SAMPLES - comparison between Polysome fractions and Total RNA ####################################################################
+
+#Run DESeq2 on the dataset
+dds.NAA_samples <- DESeq(dds.NAA_samples)
+
+#Normalize counts
+dds.NAA_samples <- estimateSizeFactors(dds.NAA_samples)
+
+#Write counts to file
+write.csv(STAR.counts_NAA, "counts_NAA_samples.csv", quote = FALSE)
+#Write normalized counts to file
+write.csv(counts(dds.NAA_samples, normalized = TRUE), "counts_NAA_samples_normalized.csv", quote = FALSE)
+
+#Extract results with applied filters for p-value and log2 foldchange threshold
+#Set p-value (set the variable here, so the results function and any manual filtering later rely on the same value)
+p.val <- 0.05
+fc.limit <- 1
+
+#Extract results (contrast needs 3 values: Which independent variable to use, Numerator=Treatment, Denominator=Control)
+res_conditions_NAA <- results(dds.NAA_samples, alpha = p.val, contrast = c("condition", "Polysomes", "Total_RNA"))
+
+#Print summary
+summary(res_conditions_NAA)
+
+#Convert to dataframe
+res_conditions_NAA_df <- data.frame(res_conditions_NAA)
+
+#Write results to file
+write.csv(res_conditions_NAA_df, "Foldchanges_NAA.csv", quote = FALSE)
+
+#Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
+genes.sig_NAA <- subset(res_conditions_NAA_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
+write.csv(genes.sig_NAA, "Foldchanges_sig_NAA.csv", quote = FALSE)
+#write.table(genes.sig, "Y:/Omics/RiboSeq/PolysomeEnrichment/Significantly_regulated_genes.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
