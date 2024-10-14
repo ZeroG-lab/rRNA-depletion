@@ -440,6 +440,12 @@ genes.sig_Ctrl <- subset(res_conditions_Ctrl_df, abs(log2FoldChange) >= fc.limit
 write.csv(genes.sig_Ctrl, "Foldchanges_sig_Ctrl.csv", quote = FALSE)
 #write.table(genes.sig, "Y:/Omics/RiboSeq/PolysomeEnrichment/Significantly_regulated_genes.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
 
+#Plot log2foldchange in a histogram
+ggplot(genes.sig_Ctrl, aes(x = log2FoldChange))+
+  geom_histogram(binwidth = 0.5, fill = "blue", color = "blue")+
+  labs(title = "Histogram of log2FoldChanges in Ctrl samples", x = "log2FoldChange", y = "Frequency")+
+  theme_minimal()
+
 # BUILD METADATA FOR NAA SAMPLES ______________________________________________________________________________________
 
 #Generate sample table containing experiment information 
@@ -494,4 +500,140 @@ write.csv(res_conditions_NAA_df, "Foldchanges_NAA.csv", quote = FALSE)
 #Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
 genes.sig_NAA <- subset(res_conditions_NAA_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
 write.csv(genes.sig_NAA, "Foldchanges_sig_NAA.csv", quote = FALSE)
+
 #write.table(genes.sig, "Y:/Omics/RiboSeq/PolysomeEnrichment/Significantly_regulated_genes.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
+
+#Plot log2foldchange in a histogram
+ggplot(res_conditions_NAA_df, aes(x = log2FoldChange))+
+  geom_histogram(binwidth = 0.5, fill = "blue", color = "blue")+
+  labs(title = "Histogram of log2FoldChanges in NAA samples", x = "log2FoldChange", y = "Frequency")+
+  theme_minimal()
+
+
+# BUILD METADATA FOR Total RNA SAMPLES ______________________________________________________________________________________
+
+#Generate sample table containing experiment information 
+Columns_with_Total_RNA_tmp <- grep("Total_RNA", colnames(STAR.counts),value = TRUE)
+sample.table_Total_RNA <- data.frame(sample = Columns_with_Total_RNA_tmp)
+rownames(sample.table_Total_RNA) <- sample.table_Total_RNA$sample 
+sample.table_Total_RNA$treatment <- rep(c("Ctrl", "NAA"), each = 4)
+sample.table_Total_RNA$condition <- rep(c("Total_RNA"), each = 8)
+sample.table_Total_RNA$replicate <- gsub("^.*_Ctrl_", "", sample.table_Total_RNA$sample)
+sample.table_Total_RNA$replicate <- gsub("^.*_NAA_", "", sample.table_Total_RNA$replicate)
+
+#Generate subset of the STAR.counts table containing just informations about control samples
+STAR.counts_Total_RNA_tmp <- grep("Total_RNA", colnames(STAR.counts), value = TRUE)
+STAR.counts_Total_RNA <- STAR.counts[, STAR.counts_Total_RNA_tmp]
+
+#optional: write sample table to file for export
+#write.table(sample.table, "./sample_table.txt", quote = FALSE, row.names = FALSE)
+
+dds.Total_RNA <- DESeqDataSetFromMatrix(STAR.counts_Total_RNA,
+                                   colData = sample.table_Total_RNA,
+                                   design = ~ replicate+treatment)
+
+# DIFFERENTIAL GENE EXPRESSION FOR Total RNA SAMPLES - comparison between Ctrl and NAA samples ####################################################################
+
+#Run DESeq2 on the dataset
+dds.Total_RNA <- DESeq(dds.Total_RNA)
+
+#Normalize counts
+dds.Total_RNA <- estimateSizeFactors(dds.Total_RNA)
+
+#Write counts to file
+write.csv(STAR.counts_Total_RNA, "counts_Total_RNA.csv", quote = FALSE)
+#Write normalized counts to file
+write.csv(counts(dds.Total_RNA, normalized = TRUE), "counts_Total_RNA_normalized.csv", quote = FALSE)
+
+#Extract results with applied filters for p-value and log2 foldchange threshold
+#Set p-value (set the variable here, so the results function and any manual filtering later rely on the same value)
+p.val <- 0.05
+fc.limit <- 1
+
+#Extract results (contrast needs 3 values: Which independent variable to use, Numerator=Treatment, Denominator=Control)
+res_Total_RNA <- results(dds.Total_RNA, alpha = p.val, contrast = c("treatment", "Ctrl", "NAA"))
+
+#Print summary
+summary(res_Total_RNA)
+
+#Convert to dataframe
+res_Total_RNA_df <- data.frame(res_Total_RNA)
+
+#Write results to file
+write.csv(res_Total_RNA_df, "Foldchanges_Total_RNA.csv", quote = FALSE)
+
+#Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
+genes.sig_Total_RNA <- subset(res_Total_RNA_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
+write.csv(genes.sig_Total_RNA, "Foldchanges_sig_Total_RNA.csv", quote = FALSE)
+
+#write.table(genes.sig, "Y:/Omics/RiboSeq/PolysomeEnrichment/Significantly_regulated_genes.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
+
+#Plot log2foldchange in a histogram
+ggplot(res_Total_RNA_df, aes(x = log2FoldChange))+
+  geom_histogram(binwidth = 0.5, fill = "blue", color = "blue")+
+  labs(title = "Histogram of log2FoldChanges in Total_RNA samples", x = "log2FoldChange", y = "Frequency")+
+  theme_minimal()
+
+# BUILD METADATA FOR POLYSOME ENRICHED SAMPLES ______________________________________________________________________________________
+
+#Generate sample table containing experiment information 
+Columns_with_Polysome_Fractions_tmp <- grep("Polysome_Fractions", colnames(STAR.counts),value = TRUE)
+sample.table_Polysome_Fractions <- data.frame(sample = Columns_with_Polysome_Fractions_tmp)
+rownames(sample.table_Polysome_Fractions) <- sample.table_Polysome_Fractions$sample 
+sample.table_Polysome_Fractions$treatment <- rep(c("Ctrl", "NAA"), each = 4)
+sample.table_Polysome_Fractions$condition <- rep(c("Polysome_Fractions"), each = 8)
+sample.table_Polysome_Fractions$replicate <- gsub("^.*_Ctrl_", "", sample.table_Polysome_Fractions$sample)
+sample.table_Polysome_Fractions$replicate <- gsub("^.*_NAA_", "", sample.table_Polysome_Fractions$replicate)
+
+#Generate subset of the STAR.counts table containing just informations about control samples
+STAR.counts_Polysome_Fractions_tmp <- grep("Polysome_Fractions", colnames(STAR.counts), value = TRUE)
+STAR.counts_Polysome_Fractions <- STAR.counts[, STAR.counts_Polysome_Fractions_tmp]
+
+#optional: write sample table to file for export
+#write.table(sample.table, "./sample_table.txt", quote = FALSE, row.names = FALSE)
+
+dds.Polysome_Fractions <- DESeqDataSetFromMatrix(STAR.counts_Polysome_Fractions,
+                                        colData = sample.table_Polysome_Fractions,
+                                        design = ~ replicate+treatment)
+
+# DIFFERENTIAL GENE EXPRESSION FOR POLYSOME ENRICHED SAMPLES - comparison between Ctrl and NAA samples ####################################################################
+
+#Run DESeq2 on the dataset
+dds.Polysome_Fractions <- DESeq(dds.Polysome_Fractions)
+
+#Normalize counts
+dds.Polysome_Fractions <- estimateSizeFactors(dds.Polysome_Fractions)
+
+#Write counts to file
+write.csv(STAR.counts_Polysome_Fractions, "counts_Polysome_Fractions.csv", quote = FALSE)
+#Write normalized counts to file
+write.csv(counts(dds.Polysome_Fractions, normalized = TRUE), "counts_Polysome_Fractions_normalized.csv", quote = FALSE)
+
+#Extract results with applied filters for p-value and log2 foldchange threshold
+#Set p-value (set the variable here, so the results function and any manual filtering later rely on the same value)
+p.val <- 0.05
+fc.limit <- 1
+
+#Extract results (contrast needs 3 values: Which independent variable to use, Numerator=Treatment, Denominator=Control)
+res_Polysome_Fractions <- results(dds.Polysome_Fractions, alpha = p.val, contrast = c("treatment", "Ctrl", "NAA"))
+
+#Print summary
+summary(res_Polysome_Fractions)
+
+#Convert to dataframe
+res_Polysome_Fractions_df <- data.frame(res_Polysome_Fractions)
+
+#Write results to file
+write.csv(res_Polysome_Fractions_df, "Foldchanges_Polysome_Fractions.csv", quote = FALSE)
+
+#Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
+genes.sig_Polysome_Fractions <- subset(res_Polysome_Fractions_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
+write.csv(genes.sig_Polysome_Fractions, "Foldchanges_sig_Polysome_Fractions.csv", quote = FALSE)
+
+#write.table(genes.sig, "Y:/Omics/RiboSeq/PolysomeEnrichment/Significantly_regulated_genes.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
+
+#Plot log2foldchange in a histogram
+ggplot(res_Polysome_Fractions_df, aes(x = log2FoldChange))+
+  geom_histogram(binwidth = 0.5, fill = "blue", color = "blue")+
+  labs(title = "Histogram of log2FoldChanges in Polysome enriched samples", x = "log2FoldChange", y = "Frequency")+
+  theme_minimal()
