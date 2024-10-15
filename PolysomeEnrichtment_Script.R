@@ -446,6 +446,43 @@ ggplot(genes.sig_Ctrl, aes(x = log2FoldChange))+
   labs(title = "Histogram of log2FoldChanges in Ctrl samples", x = "log2FoldChange", y = "Frequency")+
   theme_minimal()
 
+#Build Volcano plots
+
+#Define plot colors
+col_down <- viridis::inferno(11)[5]
+col_up <- viridis::inferno(11)[7]
+col_neutral <- "grey80"
+
+#Select data to plot
+plotdata_Ctrl <- res_conditions_Ctrl_df
+
+#Modify dataframe for plotting by adding coloring information
+plotdata_Ctrl$ID <- row.names(plotdata_Ctrl)
+plotdata_Ctrl$color[abs(plotdata_Ctrl$log2FoldChange) > fc.limit] <- 0
+plotdata_Ctrl$color[which(plotdata_Ctrl$padj > p.val)] <- 1
+plotdata_Ctrl$color[which(abs(plotdata_Ctrl$log2FoldChange) < fc.limit)] <- 1
+
+#Plotting volcano plot
+ggplot(plotdata_Ctrl, aes(log2FoldChange, -log10(padj), label = ID, color = log2FoldChange))+
+  geom_point_rast(size = 1)+
+  geom_point_rast(color = col_neutral, alpha = plotdata_Ctrl$color, size = 0.5)+
+  scale_x_continuous(limits = c(-7,7), breaks = seq(-6,6,2))+
+  scale_y_continuous(limits = c(0,25), breaks = seq(0,25,5))+
+  scale_color_viridis_c(option = "inferno", limits = c(-7,7), begin = 0.1, end = 0.9, guide = NULL)+
+  geom_hline(yintercept = -log10(p.val), linetype = 2)+
+  geom_vline(xintercept = c(-fc.limit,fc.limit), linetype = 2)+
+  ggtitle("Ctrl Polysome enriched fractions and Total_RNA samples ")+
+  xlab("Log2 Foldchange")+
+  ylab("-Log10 adjusted p-value")+
+  annotate("text", x = -5, y = 23, label = length(subset(plotdata_Ctrl, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
+  annotate("text", x = 5, y = 23, label = length(subset(plotdata_Ctrl, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
+  theme_light(base_size = 9)+
+  theme(axis.text = element_text(color = "black"))
+
+#Save volcano plot to file
+ggsave("Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/Volcano_Ctrl.pdf", width = 12, height = 12, units = "cm")
+
+
 # BUILD METADATA FOR NAA SAMPLES ______________________________________________________________________________________
 
 #Generate sample table containing experiment information 
@@ -509,6 +546,42 @@ ggplot(res_conditions_NAA_df, aes(x = log2FoldChange))+
   labs(title = "Histogram of log2FoldChanges in NAA samples", x = "log2FoldChange", y = "Frequency")+
   theme_minimal()
 
+#Build Volcano plots
+
+#Define plot colors
+col_down <- viridis::inferno(11)[5]
+col_up <- viridis::inferno(11)[7]
+col_neutral <- "grey80"
+
+#Select data to plot
+plotdata_NAA <- res_conditions_NAA_df
+
+#Modify dataframe for plotting by adding coloring information
+plotdata_NAA$ID <- row.names(plotdata_NAA)
+plotdata_NAA$color[abs(plotdata_NAA$log2FoldChange) > fc.limit] <- 0
+plotdata_NAA$color[which(plotdata_NAA$padj > p.val)] <- 1
+plotdata_NAA$color[which(abs(plotdata_NAA$log2FoldChange) < fc.limit)] <- 1
+
+#Plotting volcano plot
+ggplot(plotdata_NAA, aes(log2FoldChange, -log10(padj), label = ID, color = log2FoldChange))+
+  geom_point_rast(size = 1)+
+  geom_point_rast(color = col_neutral, alpha = plotdata_NAA$color, size = 0.5)+
+  scale_x_continuous(limits = c(-7,7), breaks = seq(-6,6,2))+
+  scale_y_continuous(limits = c(0,25), breaks = seq(0,25,5))+
+  scale_color_viridis_c(option = "inferno", limits = c(-7,7), begin = 0.1, end = 0.9, guide = NULL)+
+  geom_hline(yintercept = -log10(p.val), linetype = 2)+
+  geom_vline(xintercept = c(-fc.limit,fc.limit), linetype = 2)+
+  ggtitle("20 µM NAA for 90 min")+
+  xlab("Log2 Foldchange")+
+  ylab("-Log10 adjusted p-value")+
+  annotate("text", x = -5, y = 23, label = length(subset(plotdata_NAA, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
+  annotate("text", x = 5, y = 23, label = length(subset(plotdata_NAA, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
+  theme_light(base_size = 9)+
+  theme(axis.text = element_text(color = "black"))
+
+#Save volcano plot to file
+ggsave("Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/Volcano_NAA.pdf", width = 12, height = 12, units = "cm")
+
 
 # BUILD METADATA FOR Total RNA SAMPLES ______________________________________________________________________________________
 
@@ -551,7 +624,7 @@ p.val <- 0.05
 fc.limit <- 1
 
 #Extract results (contrast needs 3 values: Which independent variable to use, Numerator=Treatment, Denominator=Control)
-res_Total_RNA <- results(dds.Total_RNA, alpha = p.val, contrast = c("treatment", "Ctrl", "NAA"))
+res_Total_RNA <- results(dds.Total_RNA, alpha = p.val, contrast = c("treatment", "NAA", "Ctrl"))
 
 #Print summary
 summary(res_Total_RNA)
@@ -561,18 +634,56 @@ res_Total_RNA_df <- data.frame(res_Total_RNA)
 
 #Write results to file
 write.csv(res_Total_RNA_df, "Foldchanges_Total_RNA.csv", quote = FALSE)
+write.table(res_Total_RNA_df, "Y:/Omics/RiboSeq/PolysomeEnrichment/Foldchanges_Total_RNA.txt", quote = TRUE, row.names = TRUE, sep = "\t")
 
 #Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
 genes.sig_Total_RNA <- subset(res_Total_RNA_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
 write.csv(genes.sig_Total_RNA, "Foldchanges_sig_Total_RNA.csv", quote = FALSE)
 
-#write.table(genes.sig, "Y:/Omics/RiboSeq/PolysomeEnrichment/Significantly_regulated_genes.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
+#write.table(genes.sig_Total_RNA, "Y:/Omics/RiboSeq/PolysomeEnrichment/Significantly_regulated_genes_Total_RNA.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
 
 #Plot log2foldchange in a histogram
 ggplot(res_Total_RNA_df, aes(x = log2FoldChange))+
-  geom_histogram(binwidth = 0.5, fill = "blue", color = "blue")+
+  geom_histogram(binwidth = 0.5, fill = "skyblue", color = "blue")+
   labs(title = "Histogram of log2FoldChanges in Total_RNA samples", x = "log2FoldChange", y = "Frequency")+
   theme_minimal()
+
+#Build Volcano plots
+
+#Define plot colors
+col_down <- viridis::inferno(11)[5]
+col_up <- viridis::inferno(11)[7]
+col_neutral <- "grey80"
+
+#Select data to plot
+plotdata_Total_RNA <- res_Total_RNA_df
+
+#Modify dataframe for plotting by adding coloring information
+plotdata_Total_RNA$ID <- row.names(plotdata_Total_RNA)
+plotdata_Total_RNA$color[abs(plotdata_Total_RNA$log2FoldChange) > fc.limit] <- 0
+plotdata_Total_RNA$color[which(plotdata_Total_RNA$padj > p.val)] <- 1
+plotdata_Total_RNA$color[which(abs(plotdata_Total_RNA$log2FoldChange) < fc.limit)] <- 1
+
+#Plotting volcano plot
+ggplot(plotdata_Total_RNA, aes(log2FoldChange, -log10(padj), label = ID, color = log2FoldChange))+
+  geom_point_rast(size = 1)+
+  geom_point_rast(color = col_neutral, alpha = plotdata_Total_RNA$color, size = 0.5)+
+  scale_x_continuous(limits = c(-7,7), breaks = seq(-6,6,2))+
+  scale_y_continuous(limits = c(0,25), breaks = seq(0,25,5))+
+  scale_color_viridis_c(option = "inferno", limits = c(-7,7), begin = 0.1, end = 0.9, guide = NULL)+
+  geom_hline(yintercept = -log10(p.val), linetype = 2)+
+  geom_vline(xintercept = c(-fc.limit,fc.limit), linetype = 2)+
+  ggtitle("20 µM NAA for 90 min and Ctrl samples")+
+  xlab("Log2 Foldchange")+
+  ylab("-Log10 adjusted p-value")+
+  annotate("text", x = -5, y = 23, label = length(subset(plotdata_Total_RNA, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
+  annotate("text", x = 5, y = 23, label = length(subset(plotdata_Total_RNA, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
+  theme_light(base_size = 9)+
+  theme(axis.text = element_text(color = "black"))
+
+#Save volcano plot to file
+ggsave("Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/Volcano_Total_RNA.pdf", width = 12, height = 12, units = "cm")
+
 
 # BUILD METADATA FOR POLYSOME ENRICHED SAMPLES ______________________________________________________________________________________
 
@@ -615,7 +726,7 @@ p.val <- 0.05
 fc.limit <- 1
 
 #Extract results (contrast needs 3 values: Which independent variable to use, Numerator=Treatment, Denominator=Control)
-res_Polysome_Fractions <- results(dds.Polysome_Fractions, alpha = p.val, contrast = c("treatment", "Ctrl", "NAA"))
+res_Polysome_Fractions <- results(dds.Polysome_Fractions, alpha = p.val, contrast = c("treatment", "NAA", "Ctrl"))
 
 #Print summary
 summary(res_Polysome_Fractions)
@@ -634,6 +745,56 @@ write.csv(genes.sig_Polysome_Fractions, "Foldchanges_sig_Polysome_Fractions.csv"
 
 #Plot log2foldchange in a histogram
 ggplot(res_Polysome_Fractions_df, aes(x = log2FoldChange))+
-  geom_histogram(binwidth = 0.5, fill = "blue", color = "blue")+
+  geom_histogram(binwidth = 0.5, fill = "lightgreen", color = "green")+
   labs(title = "Histogram of log2FoldChanges in Polysome enriched samples", x = "log2FoldChange", y = "Frequency")+
+  theme_minimal()
+
+#Build Volcano plots
+
+#Define plot colors
+col_down <- viridis::inferno(11)[5]
+col_up <- viridis::inferno(11)[7]
+col_neutral <- "grey80"
+
+#Select data to plot
+plotdata_Polysome_Fractions <- res_Polysome_Fractions_df
+
+#Modify dataframe for plotting by adding coloring information
+plotdata_Polysome_Fractions$ID <- row.names(plotdata_Polysome_Fractions)
+plotdata_Polysome_Fractions$color[abs(plotdata_Polysome_Fractions$log2FoldChange) > fc.limit] <- 0
+plotdata_Polysome_Fractions$color[which(plotdata_Polysome_Fractions$padj > p.val)] <- 1
+plotdata_Polysome_Fractions$color[which(abs(plotdata_Polysome_Fractions$log2FoldChange) < fc.limit)] <- 1
+
+#Plotting volcano plot
+ggplot(plotdata_Polysome_Fractions, aes(log2FoldChange, -log10(padj), label = ID, color = log2FoldChange))+
+  geom_point_rast(size = 1)+
+  geom_point_rast(color = col_neutral, alpha = plotdata_Polysome_Fractions$color, size = 0.5)+
+  scale_x_continuous(limits = c(-7,7), breaks = seq(-6,6,2))+
+  scale_y_continuous(limits = c(0,25), breaks = seq(0,25,5))+
+  scale_color_viridis_c(option = "inferno", limits = c(-7,7), begin = 0.1, end = 0.9, guide = NULL)+
+  geom_hline(yintercept = -log10(p.val), linetype = 2)+
+  geom_vline(xintercept = c(-fc.limit,fc.limit), linetype = 2)+
+  ggtitle("20 µM NAA for 90 min and Ctrl samples")+
+  xlab("Log2 Foldchange")+
+  ylab("-Log10 adjusted p-value")+
+  annotate("text", x = -5, y = 23, label = length(subset(plotdata_Polysome_Fractions, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
+  annotate("text", x = 5, y = 23, label = length(subset(plotdata_Polysome_Fractions, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
+  theme_light(base_size = 9)+
+  theme(axis.text = element_text(color = "black"))
+
+#Save volcano plot to file
+ggsave("Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/Volcano_Polysome_Fractions.pdf", width = 12, height = 12, units = "cm")
+
+
+#Plot log2FoldChanges from Polysome enriched samples against Total_RNA samples in a scatterplot ________________________________________________________________________
+
+#Create new column in genes.sig data.frame called "ID" and contains rownames of previous data.frame
+genes.sig_Total_RNA$ID <- rownames(genes.sig_Total_RNA)
+genes.sig_Polysome_Fractions$ID <- rownames(genes.sig_Polysome_Fractions)
+#merge the two data.frames on that common "ID" column
+log2foldchanges_combined <- merge(genes.sig_Total_RNA, genes.sig_Polysome_Fractions, by = "ID")
+#Plot data in a scatterplot 
+ggplot(data = log2foldchanges_combined, aes(x = log2foldchanges_combined$log2FoldChange.x, y = log2foldchanges_combined$log2FoldChange.y))+
+  geom_point()+
+  labs(titel = "Scatterplot of log2FoldChanges from Polysome enriched and Total_RNA samples", x ="Log2FoldChanges Total_RNA samples", y = "Log2FoldChanges Polysome enriched samples")+
   theme_minimal()
