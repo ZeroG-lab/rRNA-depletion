@@ -147,42 +147,34 @@ for (i in list.files("./STAR_Output/", pattern = "ReadsPerGene", full.names = TR
   rm(temp,i)
 }
 
-#Normalize counts based on library size (TPM - Transcripts Per Million)
-STAR.counts$Polysome_Fractions_Ctrl_1 <- STAR.counts$Polysome_Fractions_Ctrl_1/4232359*1000000
-STAR.counts$Polysome_Fractions_Ctrl_2 <- STAR.counts$Polysome_Fractions_Ctrl_2/2718839*1000000
-STAR.counts$Polysome_Fractions_Ctrl_3 <- STAR.counts$Polysome_Fractions_Ctrl_3/2203321*1000000
-STAR.counts$Polysome_Fractions_Ctrl_4 <- STAR.counts$Polysome_Fractions_Ctrl_4/1789759*1000000
-STAR.counts$Polysome_Fractions_NAA_1 <- STAR.counts$Polysome_Fractions_NAA_1/2432819*1000000
-STAR.counts$Polysome_Fractions_NAA_2 <- STAR.counts$Polysome_Fractions_NAA_2/2362353*1000000
-STAR.counts$Polysome_Fractions_NAA_3 <- STAR.counts$Polysome_Fractions_NAA_3/1534173*1000000
-STAR.counts$Polysome_Fractions_NAA_4 <- STAR.counts$Polysome_Fractions_NAA_4/4130239*1000000
-
-#Normalize STAR.counts of Polysome Fractions on the ratio between Total_RNA and Polysomes per samples
-STAR.counts$Polysome_Fractions_Ctrl_1 <- STAR.counts$Polysome_Fractions_Ctrl_1/3.9 
-STAR.counts$Polysome_Fractions_Ctrl_2 <- STAR.counts$Polysome_Fractions_Ctrl_2/3.35 
-STAR.counts$Polysome_Fractions_Ctrl_3 <- STAR.counts$Polysome_Fractions_Ctrl_3/2.36
-STAR.counts$Polysome_Fractions_Ctrl_4 <- STAR.counts$Polysome_Fractions_Ctrl_4/3.45
-STAR.counts$Polysome_Fractions_NAA_1 <- STAR.counts$Polysome_Fractions_NAA_1/4.85
-STAR.counts$Polysome_Fractions_NAA_2 <- STAR.counts$Polysome_Fractions_NAA_2/3.86
-STAR.counts$Polysome_Fractions_NAA_3 <- STAR.counts$Polysome_Fractions_NAA_3/2.76
-STAR.counts$Polysome_Fractions_NAA_4 <- STAR.counts$Polysome_Fractions_NAA_4/2.17
-
+#filter STAR.counts containing transcripts with 2 or more counts per million reads  
+STAR.counts.cpm <- STAR.counts
+for (i in 1:length(colnames(STAR.counts))) {
+  
+  STAR.counts.cpm[,i] <- STAR.counts[,i]/sum(STAR.counts[,i])*1000000
+ 
+  print(i)
+ 
+}
+#Create STAR.counts subset that just contains transcripts with more than 2 or more counts per million reads 
+STAR.counts.subset <- STAR.counts[apply(STAR.counts.cpm >= 2, 1, all),]  
+  
+ 
 
 # BUILD METADATA ______________________________________________________________________________________
 
 #Generate sample table containing experiment information 
-sample.table <- data.frame(sample = colnames(STAR.counts))
+sample.table <- data.frame(sample = colnames(STAR.counts.subset))
 rownames(sample.table) <- sample.table$sample 
 sample.table$treatment <- rep(c("Ctrl", "NAA"), each = 4)
 sample.table$condition <- rep(c("Polysomes", "Total_RNA"), each = 8)
 sample.table$replicate <- gsub("^.*_NAA_", "", sample.table$sample)
 sample.table$replicate <- gsub("^.*_Ctrl_", "", sample.table$replicate)
 
-
 #optional: write sample table to file for export
 #write.table(sample.table, "./sample_table.txt", quote = FALSE, row.names = FALSE)
 
-dds.NAA <- DESeqDataSetFromMatrix(STAR.counts,
+dds.overall <- DESeqDataSetFromMatrix(STAR.counts.subset,
                                   colData = sample.table,
                                   design = ~ replicate+condition+treatment)
 
@@ -191,36 +183,36 @@ dds.NAA <- DESeqDataSetFromMatrix(STAR.counts,
 #Perform Variance Stabilized Transformation on the count data to equalize variances across means
 
 #Use vst for larger datasets, fast
-dds.NAA.vst <- vst(dds.NAA)
+dds.overall.vst <- vst(dds.overall)
 #Use rlog for smaller datasets or large sequencing depth differences between samples, slower
-dds.NAA.rlog <- rlog(dds.NAA)
+dds.overall.rlog <- rlog(dds.overall)
 
 #Visualize mean standard deviation to decide which transformation to use (flatter = better)
 #Each plot is printed to a file for reference after drawing
 #Combined Data
-meanSdPlot(assay(dds.NAA), ranks = FALSE)
-#dev.print(pdf, "./Plots/meanSd_raw.pdf")
-meanSdPlot(assay(dds.NAA.vst), ranks = FALSE)
-#dev.print(pdf, "./Plots/meanSd_vst.pdf")
-meanSdPlot(assay(dds.NAA.rlog), ranks = FALSE)
-#dev.print(pdf, "./Plots/meanSd_rlog.pdf")
+meanSdPlot(assay(dds.overall), ranks = FALSE)
+dev.print(pdf, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/meanSd_raw.pdf")
+meanSdPlot(assay(dds.overall.vst), ranks = FALSE)
+dev.print(pdf, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/meanSd_vst.pdf")
+meanSdPlot(assay(dds.overall.rlog), ranks = FALSE)
+dev.print(pdf, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/meanSd_rlog.pdf")
 
 #Use variance stabilized data to visualize sample distances in a heatmap (= how similar are the samples?)
 
 #Calculate euclidian sample distance matrix from preferred stabilization
-#NAA
-euc.dist.NAA <- dist(t(assay(dds.NAA.vst)))
-sampleDistMatrix.NAA <- as.matrix(euc.dist.NAA)
+#overall, unselected on a special condition
+euc.dist.overall <- dist(t(assay(dds.overall.vst)))
+sampleDistMatrix.overall <- as.matrix(euc.dist.overall)
 
 #Draw heatmap
 colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
-#NAA
-pheatmap(sampleDistMatrix.NAA,
-         clustering_distance_rows = euc.dist.NAA,
-         clustering_distance_cols = euc.dist.NAA,
+#overall, unselected on a special condition
+pheatmap(sampleDistMatrix.overall,
+         clustering_distance_rows = euc.dist.overall,
+         clustering_distance_cols = euc.dist.overall,
          col = colors)
 #Print out plot for reference
-#dev.print(pdf, "./Plots/NAA/distheatmap.pdf") 
+#dev.print(pdf, "./Plots/distheatmap.pdf") 
 
 #Principal Component Analysis _____________________________________________________________________________
 
@@ -257,10 +249,13 @@ plotPCA.ext <- function (object, intgroup = "treatment", ntop = 500,
 } 
 
 #Generate and export PCA data based on preferred stabilization
-pcaData <- plotPCA.ext(dds.NAA.vst, intgroup = "treatment", returnData = TRUE) 
+pcaData <- plotPCA.ext(dds.overall.vst, intgroup = "treatment", returnData = TRUE) 
 
 
 pcaData$condition <- rep(c("Polysome", "Total_RNA"), each = 8)
+
+#Select colors 
+selected_colors <- MetBrewer::met.brewer("Derain", n = 7)[c(1,6)]
 
 #Plot PCAs 1-6 in ggplot and save them
 percentVar <- round(100 * attr(pcaData, "percentVar"))
@@ -274,28 +269,27 @@ for (l in c(1:3)) {
     #geom_text(aes(label = gsub("_C.*$|_T.*$","",name)), size = 2.5, nudge_y = -0.8)+
     xlab(paste0(pcs[l,1],": ", percentVar[l+(l-1)], "% variance")) +
     ylab(paste0(pcs[l,2], ": ", percentVar[l+l], "% variance")) +
-    scale_color_viridis_d(option = "inferno", begin = 0.3, end = 0.8, name = NULL)+
+    scale_color_manual(values = selected_colors)+
     ggtitle("Principal Component Analysis")+
     theme_light(base_size = 9)+
     theme(axis.text = element_text(color = "black"), legend.position = "right")
   
   #Save PCA plot
-  ggsave(filename = paste0("Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/PCA_", l+(l-1), "+", l+l, ".pdf"), width = 12, height = 12, units = "cm")
+  ggsave(filename = paste0("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/PCA_", l+(l-1), "+", l+l, ".pdf"), width = 12, height = 12, units = "cm")
 }
 
-
-# DIFFERENTIAL GENE EXPRESSION - NAA Samples ####################################################################
+# DIFFERENTIAL GENE EXPRESSION ####################################################################
 
 #Run DESeq2 on the dataset
-dds.NAA <- DESeq(dds.NAA)
+dds.overall <- DESeq(dds.overall)
 
 #Normalize counts
-dds.NAA <- estimateSizeFactors(dds.NAA)
+dds.overall <- estimateSizeFactors(dds.overall)
 
 #Write counts to file
-write.csv(STAR.counts, "counts_NAA.csv", quote = FALSE)
+write.csv(STAR.counts, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/STAR_counts_overall.csv", quote = FALSE)
 #Write normalized counts to file
-write.csv(counts(dds.NAA, normalized = TRUE), "counts_NAA_normalized.csv", quote = FALSE)
+write.csv(counts(dds.overall, normalized = TRUE), "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/STAR_counts_overall_normalized.csv", quote = FALSE)
 
 #Extract results with applied filters for p-value and log2 foldchange threshold
 #Set p-value (set the variable here, so the results function and any manual filtering later rely on the same value)
@@ -303,21 +297,21 @@ p.val <- 0.05
 fc.limit <- 1
 
 #Extract results (contrast needs 3 values: Which independent variable to use, Numerator=Treatment, Denominator=Control)
-res_NAA <- results(dds.NAA, alpha = p.val, contrast = c("treatment", "NAA", "Ctrl"))
+res_overall <- results(dds.overall, alpha = p.val, contrast = c("treatment", "NAA", "Ctrl"))
 
 #Print summary
-summary(res_NAA)
+summary(res_overall)
 
 #Convert to dataframe
-res_NAA_df <- data.frame(res_NAA)
+res_overall_df <- data.frame(res_overall)
 
 #Write results to file
-write.csv(res_NAA_df, "Foldchanges_NAA.csv", quote = FALSE)
+write.csv(res_overall_df, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Foldchanges_overall.csv", quote = FALSE)
 
 #Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
-genes.sig <- subset(res_NAA_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
-write.csv(genes.sig, "Foldchanges_sig_NAA.csv", quote = FALSE)
-#write.table(genes.sig, "Y:/Omics/RiboSeq/PolysomeEnrichment/Significantly_regulated_genes.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
+genes.sig <- subset(res_overall_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
+write.csv(genes.sig, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Foldchanges_sig_overall.csv", quote = FALSE)
+write.table(genes.sig, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Significantly_regulated_genes_overall.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
 
 #Add Metadata to significantly regulated genes and write out
 genes.sig.meta <- genes.sig
@@ -344,10 +338,9 @@ genes.sig.auxin <- data.frame("Family" = factor(rep(c("SAUR", "Aux/IAA", "GH3", 
                               "Regulation" = factor(rep(c("None", "Up", "Down"), 4), levels = c("None", "Up", "Down"))
 )
 
-
 ggplot(genes.sig.auxin, aes(Family, Number, fill = Regulation))+
   geom_col()+
-  scale_fill_manual(values = c("grey80", viridis::inferno(11)[7], viridis::inferno(11)[5]))+
+  scale_fill_manual(values = c("grey80", met.brewer("Derain", 7)[6], met.brewer("Derain", 7)[4]))+
   ylab("Number of Genes")+
   xlab("Gene Family")+
   theme_light(base_size = 9)+
@@ -355,60 +348,148 @@ ggplot(genes.sig.auxin, aes(Family, Number, fill = Regulation))+
 
 
 #Save plot to file
-ggsave("Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/NAA/AuxGenes.pdf", width = 12, height = 12, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/NAA/AuxGenes.pdf", width = 12, height = 12, units = "cm")
 
 
 #Build Volcano plots
 
 #Define plot colors
-col_down <- viridis::inferno(11)[5]
-col_up <- viridis::inferno(11)[7]
+derain_colors <- met.brewer("Derain", n = 7)
+col_down <- derain_colors[4]
+col_up <- derain_colors[6]
 col_neutral <- "grey80"
 
 #Select data to plot
-plotdata <- res_NAA_df
+plotdata_overall <- res_overall_df
 
 #Modify dataframe for plotting by adding coloring information
-plotdata$ID <- row.names(plotdata)
-plotdata$color[abs(plotdata$log2FoldChange) > fc.limit] <- 0
-plotdata$color[which(plotdata$padj > p.val)] <- 1
-plotdata$color[which(abs(plotdata$log2FoldChange) < fc.limit)] <- 1
+plotdata_overall$ID <- row.names(plotdata_overall)
+plotdata_overall$Regulation <- "insignificant"  # Initialize all as neutral
+plotdata_overall$Regulation[plotdata_overall$log2FoldChange >= fc.limit & plotdata_overall$padj <= p.val] <- "up"  
+plotdata_overall$Regulation[plotdata_overall$log2FoldChange <= -fc.limit & plotdata_overall$padj <= p.val] <- "down"  
+
 
 #Plotting volcano plot
-ggplot(plotdata, aes(log2FoldChange, -log10(padj), label = ID, color = log2FoldChange))+
+ggplot(plotdata_overall, aes(log2FoldChange, -log10(padj), label = ID, color = Regulation))+
   geom_point_rast(size = 1)+
-  geom_point_rast(color = col_neutral, alpha = plotdata$color, size = 0.5)+
-  scale_x_continuous(limits = c(-7,7), breaks = seq(-6,6,2))+
+  scale_x_continuous(limits = c(-6,6), breaks = seq(-6,6,2))+
   scale_y_continuous(limits = c(0,25), breaks = seq(0,25,5))+
-  scale_color_viridis_c(option = "inferno", limits = c(-7,7), begin = 0.1, end = 0.9, guide = NULL)+
+  scale_color_manual(values = c("down" = col_down, "up" = col_up, "insignificant" = col_neutral))+
   geom_hline(yintercept = -log10(p.val), linetype = 2)+
   geom_vline(xintercept = c(-fc.limit,fc.limit), linetype = 2)+
-  ggtitle("20 µM NAA 90 min")+
+  ggtitle("20 µM NAA for 90 min")+
   xlab("Log2 Foldchange")+
   ylab("-Log10 adjusted p-value")+
-  annotate("text", x = -5, y = 23, label = length(subset(plotdata, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
-  annotate("text", x = 5, y = 23, label = length(subset(plotdata, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
+  annotate("text", x = -4, y = 23, label = length(subset(plotdata_overall, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
+  annotate("text", x = 4, y = 23, label = length(subset(plotdata_overall, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
   theme_light(base_size = 9)+
   theme(axis.text = element_text(color = "black"))
 
 #Save volcano plot to file
-ggsave("Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/NAA/Volcano.pdf", width = 12, height = 12, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/NAA/Volcano.pdf", width = 12, height = 12, units = "cm")
+
 
 #//Build MA plots
 
 #Shrink foldchanges of results for better plotting (check lfcshrink help for other types of shrinkage)
-res.shrink <- lfcShrink(dds.NAA, res = res_NAA, type="ashr")
+#res.shrink <- lfcShrink(dds.NAA, res = res_NAA, type="ashr")
 #Plot MA data
-plotMA(res.shrink, ylim = c(-8,8))
+#plotMA(res.shrink, ylim = c(-8,8))
 #Print out plot to file
-dev.print(pdf, "Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/NAA/NAA_MAplot.pdf")
+#dev.print(pdf, "Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/NAA/NAA_MAplot.pdf")
 
 
+# DIFFERENTIAL GENE EXPRESSION WITH INTERACTION FUNCTION ####################################################################
+
+dds.interaction <- DESeqDataSetFromMatrix(STAR.counts.subset,
+                                      colData = sample.table,
+                                      design = ~ replicate+condition+treatment+condition:treatment)
+#Define the reference level
+dds.interaction$condition <- relevel(dds.interaction$condition, ref = "Total_RNA")
+#Run DESeq2 on the dataset
+dds.interaction <- DESeq(dds.interaction)
+
+#Normalize counts
+dds.interaction <- estimateSizeFactors(dds.interaction)
+
+#Write counts to file
+#write.csv(STAR.counts, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/STAR_counts_overall.csv", quote = FALSE)
+#Write normalized counts to file
+#write.csv(counts(dds.overall, normalized = TRUE), "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/STAR_counts_overall_normalized.csv", quote = FALSE)
+
+#Extract results with applied filters for p-value and log2 foldchange threshold
+#Set p-value (set the variable here, so the results function and any manual filtering later rely on the same value)
+p.val <- 0.05
+fc.limit <- 1
+
+#write out possible results to choose what should be compared with eachother
+resultsNames(dds.interaction)
+#Extract results (contrast needs 3 values: Which independent variable to use, Numerator=Treatment, Denominator=Control)
+res_interaction <- results(dds.interaction, alpha = p.val, name = "conditionPolysomes.treatmentNAA")
+
+#Print summary
+summary(res_interaction)
+
+#Convert to dataframe
+res_interaction_df <- data.frame(res_interaction)
+
+#Write results to file
+write.csv(res_interaction_df, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Foldchanges_interaction.csv", quote = FALSE)
+
+#Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
+genes.sig_interaction <- subset(res_interaction_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
+write.csv(genes.sig_interaction, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Foldchanges_sig_interaction.csv", quote = FALSE)
+write.table(genes.sig_interaction, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Significantly_regulated_genes_interaction.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
+
+#Add Metadata to significantly regulated genes and write out
+genes.sig.meta_interaction <- genes.sig_interaction
+genes.sig.meta_interaction$ID <- rownames(genes.sig.meta_interaction)
+Gene.Metadata <- read.table("Y:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
+genes.sig.meta_interaction <- merge(genes.sig.meta_interaction, Gene.Metadata, all.x = TRUE, all.y = FALSE)
+
+#Build Volcano plots
+
+#Define plot colors
+#derain_colors <- met.brewer("Derain", n = 7)
+#col_down <- derain_colors[4]
+#col_up <- derain_colors[6]
+#col_neutral <- "grey80"
+
+#Select data to plot
+#plotdata_interaction <- res_interaction_df
+
+#Modify dataframe for plotting by adding coloring information
+#plotdata_interaction$ID <- row.names(plotdata_interaction)
+#plotdata_interaction$Regulation <- "insignificant"  # Initialize all as neutral
+#plotdata_interaction$Regulation[plotdata_interaction$log2FoldChange >= fc.limit & plotdata_interaction$padj <= p.val] <- "up"  
+#plotdata_interaction$Regulation[plotdata_interaction$log2FoldChange <= -fc.limit & plotdata_interaction$padj <= p.val] <- "down"  
+
+
+#Plotting volcano plot
+#ggplot(plotdata_interaction, aes(log2FoldChange, -log10(padj), label = ID, color = Regulation))+
+  geom_point_rast(size = 1)+
+  scale_x_continuous(limits = c(-6,6), breaks = seq(-6,6,2))+
+  #scale_y_continuous(limits = c(0,25), breaks = seq(0,25,5))+
+  scale_color_manual(values = c("down" = col_down, "up" = col_up, "insignificant" = col_neutral))+
+  geom_hline(yintercept = -log10(p.val), linetype = 2)+
+  geom_vline(xintercept = c(-fc.limit,fc.limit), linetype = 2)+
+  #ggtitle("20 µM NAA for 90 min")+
+  xlab("Log2 Foldchange")+
+  ylab("-Log10 adjusted p-value")+
+  annotate("text", x = -4, y = 23, label = length(subset(plotdata_interaction, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
+  annotate("text", x = 4, y = 23, label = length(subset(plotdata_interaction, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
+  theme_light(base_size = 9)+
+  theme(axis.text = element_text(color = "black"))
+
+#Save volcano plot to file
+#ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/NAA/Volcano_interaction.pdf", width = 12, height = 12, units = "cm")
+
+  
 #Individual analysis for each condition depending on the treatment ####################################################################################################################################
 # BUILD METADATA FOR CTRL SAMPLES ______________________________________________________________________________________
 
 #Generate sample table containing experiment information 
-Columns_with_Ctrl_tmp <- grep("Ctrl", colnames(STAR.counts),value = TRUE)
+Columns_with_Ctrl_tmp <- grep("Ctrl", colnames(STAR.counts.subset),value = TRUE)
 sample.table_Ctrl <- data.frame(sample = Columns_with_Ctrl_tmp)
 rownames(sample.table_Ctrl) <- sample.table_Ctrl$sample 
 sample.table_Ctrl$treatment <- rep(c("Ctrl"), each = 8)
@@ -416,7 +497,7 @@ sample.table_Ctrl$condition <- rep(c("Polysomes", "Total_RNA"), each = 4)
 sample.table_Ctrl$replicate <- gsub("^.*_Ctrl_", "", sample.table_Ctrl$sample)
 
 #Generate subset of the STAR.counts table containing just informations about control samples
-STAR.counts_Ctrl_tmp <- grep("Ctrl", colnames(STAR.counts), value = TRUE)
+STAR.counts_Ctrl_tmp <- grep("Ctrl", colnames(STAR.counts.subset), value = TRUE)
 STAR.counts_Ctrl <- STAR.counts[, STAR.counts_Ctrl_tmp]
 
 #optional: write sample table to file for export
@@ -461,17 +542,17 @@ genes.sig_Ctrl <- subset(res_condition_Ctrl_df, abs(log2FoldChange) >= fc.limit 
 write.csv(genes.sig_Ctrl, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Foldchanges_sig_Ctrl.csv", quote = FALSE)
 #write.table(genes.sig_Ctrl, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Significantly_regulated_genes_Ctrl.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
 
-#Plot log2foldchange in a histogram
-ggplot(genes.sig_Ctrl, aes(x = log2FoldChange))+
-  geom_histogram(binwidth = 0.5, fill = "blue", color = "blue")+
-  labs(title = "Histogram of log2FoldChanges in Ctrl samples", x = "log2FoldChange", y = "Frequency")+
-  theme_minimal()
+#Add Metadata to significantly regulated genes and write out
+genes.sig.meta_Ctrl <- genes.sig_Ctrl
+genes.sig.meta_Ctrl$ID <- rownames(genes.sig.meta_Ctrl)
+Gene.Metadata <- read.table("Y:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
+genes.sig.meta_Ctrl <- merge(genes.sig.meta_Ctrl, Gene.Metadata, all.x = TRUE, all.y = FALSE)
 
 #Build Volcano plots
 
 #Define plot colors
 derain_colors <- met.brewer("Derain", n = 7)
-col_down <- derain_colors[2]
+col_down <- derain_colors[4]
 col_up <- derain_colors[6]
 col_neutral <- "grey80"
 
@@ -504,18 +585,18 @@ ggplot(plotdata_Ctrl, aes(log2FoldChange, -log10(padj), label = ID, color = Regu
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Volcano_Ctrl.pdf", width = 12, height = 12, units = "cm")
 
 
-# BUILD METADATA FOR NAA SAMPLES ______________________________________________________________________________________
+# BUILD METADATA FOR NAA TREATED SAMPLES ______________________________________________________________________________________
 
 #Generate sample table containing experiment information 
-Columns_with_NAA_tmp <- grep("NAA", colnames(STAR.counts),value = TRUE)
+Columns_with_NAA_tmp <- grep("NAA", colnames(STAR.counts.subset),value = TRUE)
 sample.table_NAA <- data.frame(sample = Columns_with_NAA_tmp)
 rownames(sample.table_NAA) <- sample.table_NAA$sample 
 sample.table_NAA$treatment <- rep(c("NAA"), each = 8)
 sample.table_NAA$condition <- rep(c("Polysomes", "Total_RNA"), each = 4)
 sample.table_NAA$replicate <- gsub("^.*_NAA_", "", sample.table_NAA$sample)
 
-#Generate subset of the STAR.counts table containing just informations about control samples
-STAR.counts_NAA_tmp <- grep("NAA", colnames(STAR.counts), value = TRUE)
+#Generate subset of the STAR.counts table containing just information about control samples
+STAR.counts_NAA_tmp <- grep("NAA", colnames(STAR.counts.subset), value = TRUE)
 STAR.counts_NAA <- STAR.counts[, STAR.counts_NAA_tmp]
 
 #optional: write sample table to file for export
@@ -555,24 +636,30 @@ res_condition_NAA_df <- data.frame(res_condition_NAA)
 #Write results to file
 write.csv(res_condition_NAA_df, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Foldchanges_NAA.csv", quote = FALSE)
 
+#Add Metadata to significantly regulated genes and write out
+res_condition_NAA.meta <- res_condition_NAA
+genes.sig.meta_Ctrl$ID <- rownames(genes.sig.meta_Ctrl)
+Gene.Metadata <- read.table("Y:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
+genes.sig.meta_Ctrl <- merge(genes.sig.meta_Ctrl, Gene.Metadata, all.x = TRUE, all.y = FALSE)
+
 #Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
 genes.sig_NAA <- subset(res_condition_NAA_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
 write.csv(genes.sig_NAA, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Foldchanges_sig_NAA.csv", quote = FALSE)
 
 #write.table(genes.sig_NAA, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Significantly_regulated_genes_NAA.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
 
-#Plot log2foldchange in a histogram
-ggplot(res_condition_NAA_df, aes(x = log2FoldChange))+
-  geom_histogram(binwidth = 0.5, fill = "blue", color = "blue")+
-  labs(title = "Histogram of log2FoldChanges in NAA samples", x = "log2FoldChange", y = "Frequency")+
-  theme_minimal()
+#Add Metadata to significantly regulated genes and write out
+genes.sig.meta_NAA <- genes.sig_NAA
+genes.sig.meta_NAA$ID <- rownames(genes.sig.meta_NAA)
+Gene.Metadata <- read.table("Y:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
+genes.sig.meta_NAA <- merge(genes.sig.meta_NAA, Gene.Metadata, all.x = TRUE, all.y = FALSE)
 
 #Build Volcano plots
 
 #Define plot colors
 derain_colors <- met.brewer("Derain", n = 7)
-col_down <- derain_colors[1]
-col_up <- derain_colors[7]
+col_down <- derain_colors[4]
+col_up <- derain_colors[6]
 col_neutral <- "grey80"
 
 #Select data to plot
@@ -595,8 +682,8 @@ ggplot(plotdata_NAA, aes(log2FoldChange, -log10(padj), label = ID, color = Regul
   ggtitle("DTG After NAA-Treatment")+
   xlab("Log2 Foldchange")+
   ylab("-Log10 adjusted p-value")+
-  annotate("text", x = -4, y = 125, label = length(subset(plotdata_NAA, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
-  annotate("text", x = 4, y = 125, label = length(subset(plotdata_NAA, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
+  annotate("text", x = -4, y = 115, label = length(subset(plotdata_NAA, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
+  annotate("text", x = 4, y = 115, label = length(subset(plotdata_NAA, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
   theme_light(base_size = 9)+
   theme(axis.text = element_text(color = "black"))
 
@@ -606,7 +693,7 @@ ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Volcano_NA
 # BUILD METADATA FOR Total RNA SAMPLES ______________________________________________________________________________________
 
 #Generate sample table containing experiment information 
-Columns_with_Total_RNA_tmp <- grep("Total_RNA", colnames(STAR.counts),value = TRUE)
+Columns_with_Total_RNA_tmp <- grep("Total_RNA", colnames(STAR.counts.subset),value = TRUE)
 sample.table_Total_RNA <- data.frame(sample = Columns_with_Total_RNA_tmp)
 rownames(sample.table_Total_RNA) <- sample.table_Total_RNA$sample 
 sample.table_Total_RNA$treatment <- rep(c("Ctrl", "NAA"), each = 4)
@@ -615,7 +702,7 @@ sample.table_Total_RNA$replicate <- gsub("^.*_Ctrl_", "", sample.table_Total_RNA
 sample.table_Total_RNA$replicate <- gsub("^.*_NAA_", "", sample.table_Total_RNA$replicate)
 
 #Generate subset of the STAR.counts table containing just informations about control samples
-STAR.counts_Total_RNA_tmp <- grep("Total_RNA", colnames(STAR.counts), value = TRUE)
+STAR.counts_Total_RNA_tmp <- grep("Total_RNA", colnames(STAR.counts.subset), value = TRUE)
 STAR.counts_Total_RNA <- STAR.counts[, STAR.counts_Total_RNA_tmp]
 
 #optional: write sample table to file for export
@@ -625,7 +712,7 @@ dds.Total_RNA <- DESeqDataSetFromMatrix(STAR.counts_Total_RNA,
                                    colData = sample.table_Total_RNA,
                                    design = ~ replicate+treatment)
 
-# DIFFERENTIAL GENE EXPRESSION FOR Total RNA SAMPLES - comparison between Ctrl and NAA samples ####################################################################
+# DIFFERENTIAL GENE EXPRESSION FOR Total RNA SAMPLES - comparison between NAA and Ctrl samples ####################################################################
 
 #Run DESeq2 on the dataset
 dds.Total_RNA <- DESeq(dds.Total_RNA)
@@ -634,9 +721,9 @@ dds.Total_RNA <- DESeq(dds.Total_RNA)
 dds.Total_RNA <- estimateSizeFactors(dds.Total_RNA)
 
 #Write counts to file
-write.csv(STAR.counts_Total_RNA, "counts_Total_RNA.csv", quote = FALSE)
+write.csv(STAR.counts_Total_RNA, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/counts_Total_RNA.csv", quote = FALSE)
 #Write normalized counts to file
-write.csv(counts(dds.Total_RNA, normalized = TRUE), "counts_Total_RNA_normalized.csv", quote = FALSE)
+write.csv(counts(dds.Total_RNA, normalized = TRUE), "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/counts_Total_RNA_normalized.csv", quote = FALSE)
 Total_RNA_counts <- counts(dds.Total_RNA)
 write.table(Total_RNA_counts, "Y:/Omics/RiboSeq/PolysomeEnrichment/Counts_Total_RNA_normalized.txt", quote = TRUE, row.names = TRUE, sep = "\t" )
 
@@ -655,62 +742,63 @@ summary(res_Total_RNA)
 res_Total_RNA_df <- data.frame(res_Total_RNA)
 
 #Write results to file
-write.csv(res_Total_RNA_df, "Foldchanges_Total_RNA.csv", quote = FALSE)
-write.table(res_Total_RNA_df, "Y:/Omics/RiboSeq/PolysomeEnrichment/Foldchanges_Total_RNA.txt", quote = TRUE, row.names = TRUE, sep = "\t")
+write.csv(res_Total_RNA_df, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Foldchanges_Total_RNA.csv", quote = FALSE)
 
 #Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
 genes.sig_Total_RNA <- subset(res_Total_RNA_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
-write.csv(genes.sig_Total_RNA, "Foldchanges_sig_Total_RNA.csv", quote = FALSE)
+write.csv(genes.sig_Total_RNA, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Foldchanges_sig_Total_RNA.csv", quote = FALSE)
 
-#write.table(genes.sig_Total_RNA, "Y:/Omics/RiboSeq/PolysomeEnrichment/Significantly_regulated_genes_Total_RNA.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
+#write.table(genes.sig_Total_RNA, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Significantly_regulated_genes_Total_RNA.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
 
-#Plot log2foldchange in a histogram
-ggplot(res_Total_RNA_df, aes(x = log2FoldChange))+
-  geom_histogram(binwidth = 0.5, fill = "skyblue", color = "blue")+
-  labs(title = "Histogram of log2FoldChanges in Total_RNA samples", x = "log2FoldChange", y = "Frequency")+
-  theme_minimal()
+#Add Metadata to significantly regulated genes and write out
+genes.sig.meta_Total_RNA <- genes.sig_Total_RNA
+genes.sig.meta_Total_RNA$ID <- rownames(genes.sig.meta_Total_RNA)
+Gene.Metadata <- read.table("Y:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
+genes.sig.meta_Total <- merge(genes.sig.meta_Total_RNA, Gene.Metadata, all.x = TRUE, all.y = FALSE)
+
 
 #Build Volcano plots
 
 #Define plot colors
 derain_colors <- met.brewer("Derain", n = 7)
-col_down <- derain_colors[1]
-col_up <- derain_colors[7]
+col_down <- derain_colors[4]
+col_up <- derain_colors[6]
 col_neutral <- "grey80"
 
 #Select data to plot
-plotdata_NAA <- res_condition_NAA_df
+plotdata_Total_RNA <- res_Total_RNA_df
 
 #Modify dataframe for plotting by adding coloring information
-plotdata_NAA$ID <- row.names(plotdata_NAA)
-plotdata_NAA$Regulation <- "insignificant"  # Initialize all as neutral
-plotdata_NAA$Regulation[plotdata_NAA$log2FoldChange >= fc.limit & plotdata_NAA$padj <= p.val] <- "up"  
-plotdata_NAA$Regulation[plotdata_NAA$log2FoldChange <= -fc.limit & plotdata_NAA$padj <= p.val] <- "down"  
+plotdata_Total_RNA$ID <- row.names(plotdata_Total_RNA)
+plotdata_Total_RNA$Regulation <- "insignificant"  # Initialize all as neutral
+plotdata_Total_RNA$Regulation[plotdata_Total_RNA$log2FoldChange >= fc.limit & plotdata_Total_RNA$padj <= p.val] <- "up"  
+plotdata_Total_RNA$Regulation[plotdata_Total_RNA$log2FoldChange <= -fc.limit & plotdata_Total_RNA$padj <= p.val] <- "down"  
 
 #Plotting volcano plot
-ggplot(plotdata_NAA, aes(log2FoldChange, -log10(padj), label = ID, color = Regulation))+
+ggplot(plotdata_Total_RNA, aes(log2FoldChange, -log10(padj), label = ID, color = Regulation))+
   geom_point_rast(size = 1)+
   scale_x_continuous(limits = c(-6,6), breaks = seq(-6,6,2))+
   #scale_y_continuous(limits = c(0,25), breaks = seq(0,25,5))+
   scale_color_manual(values = c("down" = col_down, "up" = col_up, "insignificant" = col_neutral))+
   geom_hline(yintercept = -log10(p.val), linetype = 2)+
   geom_vline(xintercept = c(-fc.limit,fc.limit), linetype = 2)+
-  ggtitle("DTG After NAA-Treatment")+
+  ggtitle("DTG in Total RNA samples under NAA vs Ctrl conditions")+
   xlab("Log2 Foldchange")+
   ylab("-Log10 adjusted p-value")+
-  annotate("text", x = -4, y = 125, label = length(subset(plotdata_NAA, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
-  annotate("text", x = 4, y = 125, label = length(subset(plotdata_NAA, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
+  annotate("text", x = -4, y = 160, label = length(subset(plotdata_Total_RNA, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
+  annotate("text", x = 4, y = 160, label = length(subset(plotdata_Total_RNA, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
   theme_light(base_size = 9)+
   theme(axis.text = element_text(color = "black"))
 
 #Save volcano plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Volcano_NAA.pdf", width = 12, height = 12, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Volcano_Total_RNA.pdf", width = 12, height = 12, units = "cm")
+
 
 
 # BUILD METADATA FOR POLYSOME ENRICHED SAMPLES ______________________________________________________________________________________
 
 #Generate sample table containing experiment information 
-Columns_with_Polysome_Fractions_tmp <- grep("Polysome_Fractions", colnames(STAR.counts),value = TRUE)
+Columns_with_Polysome_Fractions_tmp <- grep("Polysome_Fractions", colnames(STAR.counts.subset),value = TRUE)
 sample.table_Polysome_Fractions <- data.frame(sample = Columns_with_Polysome_Fractions_tmp)
 rownames(sample.table_Polysome_Fractions) <- sample.table_Polysome_Fractions$sample 
 sample.table_Polysome_Fractions$treatment <- rep(c("Ctrl", "NAA"), each = 4)
@@ -719,7 +807,7 @@ sample.table_Polysome_Fractions$replicate <- gsub("^.*_Ctrl_", "", sample.table_
 sample.table_Polysome_Fractions$replicate <- gsub("^.*_NAA_", "", sample.table_Polysome_Fractions$replicate)
 
 #Generate subset of the STAR.counts table containing just informations about control samples
-STAR.counts_Polysome_Fractions_tmp <- grep("Polysome_Fractions", colnames(STAR.counts), value = TRUE)
+STAR.counts_Polysome_Fractions_tmp <- grep("Polysome_Fractions", colnames(STAR.counts.subset), value = TRUE)
 STAR.counts_Polysome_Fractions <- STAR.counts[, STAR.counts_Polysome_Fractions_tmp]
 
 #optional: write sample table to file for export
@@ -729,7 +817,7 @@ dds.Polysome_Fractions <- DESeqDataSetFromMatrix(STAR.counts_Polysome_Fractions,
                                         colData = sample.table_Polysome_Fractions,
                                         design = ~ replicate+treatment)
 
-# DIFFERENTIAL GENE EXPRESSION FOR POLYSOME ENRICHED SAMPLES - comparison between Ctrl and NAA samples ####################################################################
+# DIFFERENTIAL GENE EXPRESSION FOR POLYSOME ENRICHED SAMPLES - comparison between NAA and Ctrl samples ####################################################################
 
 #Run DESeq2 on the dataset
 dds.Polysome_Fractions <- DESeq(dds.Polysome_Fractions)
@@ -738,9 +826,9 @@ dds.Polysome_Fractions <- DESeq(dds.Polysome_Fractions)
 dds.Polysome_Fractions <- estimateSizeFactors(dds.Polysome_Fractions)
 
 #Write counts to file
-write.csv(STAR.counts_Polysome_Fractions, "counts_Polysome_Fractions.csv", quote = FALSE)
+write.csv(STAR.counts_Polysome_Fractions, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/counts_Polysome_Fractions.csv", quote = FALSE)
 #Write normalized counts to file
-write.csv(counts(dds.Polysome_Fractions, normalized = TRUE), "counts_Polysome_Fractions_normalized.csv", quote = FALSE)
+write.csv(counts(dds.Polysome_Fractions, normalized = TRUE), "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/counts_Polysome_Fractions_normalized.csv", quote = FALSE)
 
 #Extract results with applied filters for p-value and log2 foldchange threshold
 #Set p-value (set the variable here, so the results function and any manual filtering later rely on the same value)
@@ -757,25 +845,27 @@ summary(res_Polysome_Fractions)
 res_Polysome_Fractions_df <- data.frame(res_Polysome_Fractions)
 
 #Write results to file
-write.csv(res_Polysome_Fractions_df, "Foldchanges_Polysome_Fractions.csv", quote = FALSE)
+write.csv(res_Polysome_Fractions_df, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Foldchanges_Polysome_Fractions.csv", quote = FALSE)
 
 #Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
 genes.sig_Polysome_Fractions <- subset(res_Polysome_Fractions_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
-write.csv(genes.sig_Polysome_Fractions, "Foldchanges_sig_Polysome_Fractions.csv", quote = FALSE)
+write.csv(genes.sig_Polysome_Fractions, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Foldchanges_sig_Polysome_Fractions.csv", quote = FALSE)
 
-#write.table(genes.sig, "Y:/Omics/RiboSeq/PolysomeEnrichment/Significantly_regulated_genes.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
+write.table(genes.sig, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Significantly_regulated_genes_Polysome_Fractions.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
 
-#Plot log2foldchange in a histogram
-ggplot(res_Polysome_Fractions_df, aes(x = log2FoldChange))+
-  geom_histogram(binwidth = 0.5, fill = "lightgreen", color = "green")+
-  labs(title = "Histogram of log2FoldChanges in Polysome enriched samples", x = "log2FoldChange", y = "Frequency")+
-  theme_minimal()
+#Add Metadata to significantly regulated genes and write out
+genes.sig.meta_Polysome_Fractions <- genes.sig_Polysome_Fractions
+genes.sig.meta_Polysome_Fractions$ID <- rownames(genes.sig.meta_Polysome_Fractions)
+Gene.Metadata <- read.table("Y:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
+genes.sig.meta_Polysome_Fractions <- merge(genes.sig.meta_Polysome_Fractions, Gene.Metadata, all.x = TRUE, all.y = FALSE)
+
 
 #Build Volcano plots
 
 #Define plot colors
-col_down <- viridis::inferno(11)[5]
-col_up <- viridis::inferno(11)[7]
+derain_colors <- met.brewer("Derain", n = 7)
+col_down <- derain_colors[4]
+col_up <- derain_colors[6]
 col_neutral <- "grey80"
 
 #Select data to plot
@@ -783,29 +873,28 @@ plotdata_Polysome_Fractions <- res_Polysome_Fractions_df
 
 #Modify dataframe for plotting by adding coloring information
 plotdata_Polysome_Fractions$ID <- row.names(plotdata_Polysome_Fractions)
-plotdata_Polysome_Fractions$color[abs(plotdata_Polysome_Fractions$log2FoldChange) > fc.limit] <- 0
-plotdata_Polysome_Fractions$color[which(plotdata_Polysome_Fractions$padj > p.val)] <- 1
-plotdata_Polysome_Fractions$color[which(abs(plotdata_Polysome_Fractions$log2FoldChange) < fc.limit)] <- 1
+plotdata_Polysome_Fractions$Regulation <- "insignificant"  # Initialize all as neutral
+plotdata_Polysome_Fractions$Regulation[plotdata_Polysome_Fractions$log2FoldChange >= fc.limit & plotdata_Polysome_Fractions$padj <= p.val] <- "up"  
+plotdata_Polysome_Fractions$Regulation[plotdata_Polysome_Fractions$log2FoldChange <= -fc.limit & plotdata_Polysome_Fractions$padj <= p.val] <- "down"  
 
 #Plotting volcano plot
-ggplot(plotdata_Polysome_Fractions, aes(log2FoldChange, -log10(padj), label = ID, color = log2FoldChange))+
+ggplot(plotdata_Polysome_Fractions, aes(log2FoldChange, -log10(padj), label = ID, color = Regulation))+
   geom_point_rast(size = 1)+
-  geom_point_rast(color = col_neutral, alpha = plotdata_Polysome_Fractions$color, size = 0.5)+
-  scale_x_continuous(limits = c(-7,7), breaks = seq(-6,6,2))+
-  scale_y_continuous(limits = c(0,25), breaks = seq(0,25,5))+
-  scale_color_viridis_c(option = "inferno", limits = c(-7,7), begin = 0.1, end = 0.9, guide = NULL)+
+  scale_x_continuous(limits = c(-6,6), breaks = seq(-6,6,2))+
+  #scale_y_continuous(limits = c(0,25), breaks = seq(0,25,5))+
+  scale_color_manual(values = c("down" = col_down, "up" = col_up, "insignificant" = col_neutral))+
   geom_hline(yintercept = -log10(p.val), linetype = 2)+
   geom_vline(xintercept = c(-fc.limit,fc.limit), linetype = 2)+
-  ggtitle("20 µM NAA for 90 min and Ctrl samples")+
+  ggtitle("DTG in Polysome-enriched samples under NAA vs Ctrl conditions")+
   xlab("Log2 Foldchange")+
   ylab("-Log10 adjusted p-value")+
-  annotate("text", x = -5, y = 23, label = length(subset(plotdata_Polysome_Fractions, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
-  annotate("text", x = 5, y = 23, label = length(subset(plotdata_Polysome_Fractions, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
+  annotate("text", x = -4, y = 137, label = length(subset(plotdata_Polysome_Fractions, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
+  annotate("text", x = 4, y = 137, label = length(subset(plotdata_Polysome_Fractions, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
   theme_light(base_size = 9)+
   theme(axis.text = element_text(color = "black"))
 
 #Save volcano plot to file
-ggsave("Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/Volcano_Polysome_Fractions.pdf", width = 12, height = 12, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Volcano_Polysome_Fractions.pdf", width = 12, height = 12, units = "cm")
 
 
 #Plot log2FoldChanges from Polysome enriched samples against Total_RNA samples in a scatterplot ________________________________________________________________________
