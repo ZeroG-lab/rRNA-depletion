@@ -917,32 +917,25 @@ Venn.Total_RNA.up <- rownames(subset(res_Total_RNA_df, res_Total_RNA_df$log2Fold
 Venn.Total_RNA.down <- rownames(subset(res_Total_RNA_df, res_Total_RNA_df$log2FoldChange <= -fc.limit & res_Total_RNA_df$padj <= p.val)) 
 Venn.Polysome.up <- rownames(subset(res_Polysome_Fractions_df, res_Polysome_Fractions_df$log2FoldChange >= fc.limit & res_Polysome_Fractions_df$padj <= p.val))
 Venn.Polysome.down <- rownames(subset(res_Polysome_Fractions_df, res_Polysome_Fractions_df$log2FoldChange <= -fc.limit & res_Polysome_Fractions_df$padj <= p.val))
-Venn.NAA.up <- rownames(subset(res_conditions_NAA_df, res_conditions_NAA_df$log2FoldChange >= fc.limit & res_conditions_NAA_df$padj <= p.val))
-Venn.NAA.down <- rownames(subset(res_conditions_NAA_df, res_conditions_NAA_df$log2FoldChange <= -fc.limit & res_conditions_NAA_df$padj <= p.val))
-Venn.Ctrl.up <- rownames(subset(res_conditions_Ctrl_df, res_conditions_Ctrl_df$log2FoldChange >= fc.limit & res_conditions_Ctrl_df$padj <= p.val))
-Venn.Ctrl.down <- rownames(subset(res_conditions_Ctrl_df, res_conditions_Ctrl_df$log2FoldChange <= -fc.limit & res_conditions_Ctrl_df$padj <= p.val))
+Venn.NAA.up <- rownames(subset(res_condition_NAA_df, res_condition_NAA_df$log2FoldChange >= fc.limit & res_condition_NAA_df$padj <= p.val))
+Venn.NAA.down <- rownames(subset(res_condition_NAA_df, res_condition_NAA_df$log2FoldChange <= -fc.limit & res_condition_NAA_df$padj <= p.val))
+Venn.Ctrl.up <- rownames(subset(res_condition_Ctrl_df, res_condition_Ctrl_df$log2FoldChange >= fc.limit & res_condition_Ctrl_df$padj <= p.val))
+Venn.Ctrl.down <- rownames(subset(res_condition_Ctrl_df, res_condition_Ctrl_df$log2FoldChange <= -fc.limit & res_condition_Ctrl_df$padj <= p.val))
 
-#Between Individual Conditions and Treatments  _____________________________________________________________________________________
-venn.diagram(list("Total_RNA" = c(Venn.Total_RNA.up, Venn.Total_RNA.down), "Polysome" = c(Venn.Polysome.up, Venn.Polysome.down), "NAA" = c(Venn.NAA.up, Venn.NAA.down), "Ctrl" = c(Venn.Ctrl.up, Venn.Ctrl.down)),
-             filename = "Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/Venn_Conditions_Treatments.png",
-             fill = c("#fcffa4ff", "#fca50aff", "#cc4248ff", "#6b186eff"),
-             cat.pos = c(0,0,0,0),
-             disable.logging = TRUE,
-             imagetype = "png")
 
 #Between Polysome Fractions and Total_RNA samples 
 venn.diagram(list("Total_RNA_up" = Venn.Total_RNA.up, "Total_RNA_down" = Venn.Total_RNA.down, "Polysome_up" = Venn.Polysome.up, "Polysome_down" = Venn.Polysome.down),
-             filename = "Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/Venn_Conditions.png",
-             fill = c("#fcffa4ff", "#fca50aff", "#cc4248ff", "#6b186eff"),
-             cat.pos = c(0,0,0,0),
+             filename = "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Venn_Polysomes_vs_Total_RNA.png",
+             fill = c("#EFC86EFF", "#6F9969FF", "#AAB5D5FF", "#5C66A8FF"),
+             cat.pos = c(-10,9,0,0),
              disable.logging = TRUE,
              imagetype = "png")
 
-#Between Polysome Fractions and Total_RNA samples 
+#Between NAA vs. Ctrl conditions 
 venn.diagram(list("Ctrl_up" = Venn.Ctrl.up, "Ctrl_down" = Venn.Ctrl.down, "NAA_up" = Venn.NAA.up, "NAA_down" = Venn.NAA.down),
-             filename = "Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/Venn_Treatments.png",
-             fill = c("#fcffa4ff", "#fca50aff", "#cc4248ff", "#6b186eff"),
-             cat.pos = c(0,0,0,0),
+             filename = "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Venn_NAA_vs_Ctrl.png",
+             fill = c("#EFC86EFF", "#6F9969FF", "#AAB5D5FF", "#5C66A8FF"),
+             cat.pos = c(-5,5,-2,2),
              disable.logging = TRUE,
              imagetype = "png")
 
