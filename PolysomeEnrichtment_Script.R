@@ -923,6 +923,34 @@ ggplot(data = unfiltered_res_combined, aes(x = unfiltered_res_combined$log2FoldC
 #Save volcano plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Scatterplot_Total_RNA_vs_Polysomes_unfiltered.pdf", width = 12, height = 12, units = "cm")
 
+#Build data frame containing foldchanges and p-values for all transcripts in total RNA samples and polysome fractions
+total_DEGs_Total_RNA_df <- as.data.frame(results(dds.Total_RNA)) 
+total_DEGs_Total_RNA_df$ID <- rownames(total_DEGs_Total_RNA_df)
+total_DEGs_Polysome_Fractions_df <- as.data.frame(results(dds.Polysome_Fractions))
+total_DEGs_Polysome_Fractions_df$ID <- rownames(total_DEGs_Polysome_Fractions_df)
+combined_df <- merge(total_DEGs_Total_RNA_df, total_DEGs_Polysome_Fractions_df, by = "ID", all = TRUE)
+
+#Modify dataframe for plotting by adding coloring information based on significance 
+combined_df$Significance <- "grey80"  # Initialize all as neutral
+combined_df$alpha <- 0
+combined_df$Significance[(abs(combined_df$log2FoldChange.x) >= fc.limit & combined_df$padj.x <= p.val)] <- "#FFB178FF"
+combined_df$Significance[(abs(combined_df$log2FoldChange.y) >= fc.limit & combined_df$padj.y <= p.val)] <- "#A56457FF"
+combined_df$Significance[
+  (abs(combined_df$log2FoldChange.x) >= fc.limit & combined_df$padj.x <= p.val) &
+    (abs(combined_df$log2FoldChange.y) >= fc.limit & combined_df$padj.y <= p.val)
+] <- "#DFBBC8FF"
+combined_df$alpha[combined_df$Significance != "grey80"] <- 1
+
+ggplot(data = combined_df, aes(x = combined_df$log2FoldChange.x, y = combined_df$log2FoldChange.y))+
+  geom_point(color = combined_df$Significance, alpha = combined_df$alpha)+
+  geom_smooth(method = "lm", se = FALSE, color = "grey")+
+  labs(title = "log2FoldChanges from polysome enriched and total RNA samples", x = "Log2FoldChanges Total_RNA samples", y = "Log2FoldChanges Polysome enriched samples")+
+  theme_minimal()+
+  theme_light(base_size = 9)
+#Save volcano plot to file
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Scatterplot_Total_RNA_vs_Polysomes_unfiltered.pdf", width = 12, height = 12, units = "cm")
+
+
 #Building Venn diagrams comparing NAA treatment vs Ctrl in Total_RNA and Polysome enriched samples 
 
 #Create subsets of results table after DESeq for up- or downregulated genes 
@@ -997,10 +1025,12 @@ gse_P_all <- gseGO(geneList=geneList_P,
              OrgDb = org.At.tair.db, 
              pAdjustMethod = "none")
 
+gse_P_all_simp <- simplify(gse_P_all)
+
 #Plot data for Polysome fractions (NAA vs. Ctrl) in a Splitplots _________________________________________________________________________________
-dotplot(gse_P_all, showCategory=12, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 9) + scale_fill_gradientn(colors = Morgenstern)
+dotplot(gse_P_all_simp, showCategory=12, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 9) + scale_fill_gradientn(colors = Morgenstern)
 #Save plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/PolysomeFractions/SplitplotGOall_Polysome_Fractions_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/PolysomeFractions/simpSplitplotGOall_Polysome_Fractions_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
 
 gse_P_BP <- gseGO(geneList=geneList_P, 
                    ont ="BP", 
@@ -1011,12 +1041,14 @@ gse_P_BP <- gseGO(geneList=geneList_P,
                    pvalueCutoff = 0.05, 
                    verbose = TRUE, 
                    OrgDb = org.At.tair.db, 
-                   pAdjustMethod = "none")
+                   pAdjustMethod = "none") 
+
+gse_P_BP_simp <- simplify(gse_P_BP)
 
 #Plot data
-dotplot(gse_P_BP, showCategory=12, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 9) + scale_fill_gradientn(colors = Morgenstern)
+dotplot(gse_P_BP_simp, showCategory=12, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 9) + scale_fill_gradientn(colors = Morgenstern)
 #Save plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/PolysomeFractions/SplitplotGOBP_Polysome_Fractions_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/PolysomeFractions/simpSplitplotGOBP_Polysome_Fractions_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
 
 gse_P_MF <- gseGO(geneList=geneList_P, 
                   ont ="MF", 
@@ -1028,6 +1060,7 @@ gse_P_MF <- gseGO(geneList=geneList_P,
                   verbose = TRUE, 
                   OrgDb = org.At.tair.db, 
                   pAdjustMethod = "none")
+
 #Plot data
 dotplot(gse_P_MF, showCategory=12, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 9) + scale_fill_gradientn(colors = Morgenstern)
 #Save plot to file
@@ -1062,7 +1095,7 @@ cnetplot(gse_P_all,
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/PolysomeFractions/cnetGOall_Polysomes_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
 
 #Plot data 
-cnetplot(gse_P_BP, 
+cnetplot(gse_P_BP_simp, 
          categorySize="pvalue",
          color.params = list(foldChange=geneList_T),
          cex.params = list(gene_label = 0.6, category_label = 0.8),
@@ -1151,10 +1184,12 @@ gse_T_all <- gseGO(geneList=geneList_T,
              OrgDb = org.At.tair.db, 
              pAdjustMethod = "none")
 
+gse_T_all_simp <- simplify(gse_T_all)
+
 #Plot data for Total_RNA samples (comparison NAA vs. Ctrl) in a Splitplot
-dotplot(gse_T_all, showCategory=10, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 8) + scale_fill_gradientn(colors = Morgenstern)
+dotplot(gse_T_all_simp, showCategory=10, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 8) + scale_fill_gradientn(colors = Morgenstern)
 #Save plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/SplitplotGOall_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/simpSplitplotGOall_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
 
 gse_T_BP <- gseGO(geneList=geneList_T, 
                    ont ="BP", 
@@ -1165,12 +1200,14 @@ gse_T_BP <- gseGO(geneList=geneList_T,
                    pvalueCutoff = 0.05, 
                    verbose = TRUE, 
                    OrgDb = org.At.tair.db, 
-                   pAdjustMethod = "none")
+                   pAdjustMethod = "none") 
+
+gse_T_BP_simp <- simplify(gse_T_BP)
 
 #Plot data 
-dotplot(gse_T_BP, showCategory=10, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 9) + scale_fill_gradientn(colors = Morgenstern)
+dotplot(gse_T_BP_simp, showCategory=10, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 9) + scale_fill_gradientn(colors = Morgenstern)
 #Save plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/SplitplotGOBP_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/simpSplitplotGOBP_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
 
 gse_T_MF <- gseGO(geneList=geneList_T, 
                    ont ="MF", 
@@ -1259,22 +1296,22 @@ cnetplot(gse_T_CC,
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/cnetGOCC_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
 
 #Plot data in Ridgeplot
-ridgeplot(gse_T_all)+
+ridgeplot(gse_T_all_simp)+
   labs(x = "Enrichment Distribution")+
   theme_light(base_size = 9)+
   scale_fill_gradientn(colors = Morgenstern)+ 
   theme(legend.position = "right", axis.text = element_text(color = "black"))
 #Save plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/RidgeplotGOall_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 20, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/simpRidgeplotGOall_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 20, units = "cm")
 
 #Plot data 
-ridgeplot(gse_T_BP)+
+ridgeplot(gse_T_BP_simp)+
   labs(x = "Enrichment Distribution")+
   theme_light(base_size = 9)+
   scale_fill_gradientn(colors = Morgenstern)+ 
   theme(legend.position = "right", axis.text = element_text(color = "black"))
 #Save plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/RidgeplotGOBP_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 20, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/simpRidgeplotGOBP_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 20, units = "cm")
 
 #Plot data 
 ridgeplot(gse_T_MF)+
@@ -1306,12 +1343,14 @@ gse_Ctrl_all <- gseGO(geneList=geneList_Ctrls,
              pvalueCutoff = 0.05, 
              verbose = TRUE, 
              OrgDb = org.At.tair.db, 
-             pAdjustMethod = "none")
+             pAdjustMethod = "none") 
+
+gse_Ctrl_all_simp <- simplify(gse_Ctrl_all)
 
 #Plot data for Ctrl samples in a Splitplot
-dotplot(gse_Ctrl_all, showCategory=10, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 8) + scale_fill_gradientn(colors = Morgenstern)
+dotplot(gse_Ctrl_all_simp, showCategory=10, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 8) + scale_fill_gradientn(colors = Morgenstern)
 #Save plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSamples/SplitplotGOall_Ctrls.pdf", width = 15, height = 15, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSamples/simpSplitplotGOall_Ctrls.pdf", width = 15, height = 15, units = "cm")
 
 gse_Ctrl_BP <- gseGO(geneList=geneList_Ctrls, 
                       ont ="BP", 
@@ -1324,10 +1363,12 @@ gse_Ctrl_BP <- gseGO(geneList=geneList_Ctrls,
                       OrgDb = org.At.tair.db, 
                       pAdjustMethod = "none")
 
+gse_Ctrl_BP_simp <- simplify(gse_Ctrl_BP)
+
 #Plot data 
-dotplot(gse_Ctrl_BP, showCategory=10, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 8) + scale_fill_gradientn(colors = Morgenstern)
+dotplot(gse_Ctrl_BP_simp, showCategory=8, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 8) + scale_fill_gradientn(colors = Morgenstern)
 #Save plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSamples/SplitplotGOBP_Ctrls.pdf", width = 15, height = 15, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSamples/simpSplitplotGOBP_Ctrls.pdf", width = 15, height = 15, units = "cm")
 
 gse_Ctrl_MF <- gseGO(geneList=geneList_Ctrls, 
                       ont ="MF", 
@@ -1338,12 +1379,14 @@ gse_Ctrl_MF <- gseGO(geneList=geneList_Ctrls,
                       pvalueCutoff = 0.05, 
                       verbose = TRUE, 
                       OrgDb = org.At.tair.db, 
-                      pAdjustMethod = "none")
+                      pAdjustMethod = "none") 
+
+gse_Ctrl_MF_simp <- simplify(gse_Ctrl_MF)
 
 #Plot data 
-dotplot(gse_Ctrl_MF, showCategory=7, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 8) + scale_fill_gradientn(colors = Morgenstern)
+dotplot(gse_Ctrl_MF_simp, showCategory=7, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 8) + scale_fill_gradientn(colors = Morgenstern)
 #Save plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSamples/SplitplotGOMF_Ctrls.pdf", width = 17, height = 15, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSamples/simpSplitplotGOMF_Ctrls.pdf", width = 17, height = 15, units = "cm")
 
 gse_Ctrl_CC <- gseGO(geneList=geneList_Ctrls, 
                       ont ="CC", 
@@ -1364,7 +1407,7 @@ ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSam
 #Plot data for Ctrl samples in a category network 
 Morgenstern <- met.brewer("Morgenstern")
 
-cnetplot(gse_Ctrl_all, 
+cnetplot(gse_Ctrl_all_simp, 
          categorySize="pvalue",
          color.params = list(foldChange=geneList_Ctrls),
          cex.params = list(gene_label = 0.6, category_label = 0.8),
@@ -1372,10 +1415,10 @@ cnetplot(gse_Ctrl_all,
   theme_light(base_size = 8)+
   scale_color_gradientn(colors = Morgenstern, name = "log2FoldChange")
 #Save plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSamples/cnetGOall_Ctrls.pdf", width = 15, height = 15, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSamples/simpcnetGOall_Ctrls.pdf", width = 15, height = 15, units = "cm")
 
 #Plot data
-cnetplot(gse_Ctrl_BP, 
+cnetplot(gse_Ctrl_BP_simp, 
          categorySize="pvalue",
          color.params = list(foldChange=geneList_Ctrls),
          cex.params = list(gene_label = 0.6, category_label = 0.8),
@@ -1417,7 +1460,7 @@ ridgeplot(gse_Ctrl_all)+
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSamples/RidgeplotGOall_Ctrls.pdf", width = 15, height = 25, units = "cm")
 
 #Plot data 
-ridgeplot(gse_Ctrl_BP)+
+ridgeplot(gse_Ctrl_BP_simp)+
   labs(x = "Enrichment Distribution")+
   theme_light(base_size = 9)+
   scale_fill_gradientn(colors = Morgenstern)+ 
