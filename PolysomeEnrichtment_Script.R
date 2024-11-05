@@ -24,6 +24,7 @@
 # BiocManager::install("pcaExplorer")
 # BiocManager::install("Rsubread")
 # BiocManager::install("BiocParallel")
+
 #install.packages("MetBrewer")
 #install.packages("paletteer")
 #install_github(repo = "lcalviell/Ribo-seQC")
@@ -156,11 +157,14 @@ for (i in 1:length(colnames(STAR.counts))) {
   print(i)
  
 }
+
+#Write counts to file
+#write.csv(STAR.counts, "Y:/Omics/RiboSeq/PolysomeEnrichment/STAR_Output/STAR.counts.csv", quote = FALSE, row.names = TRUE, sep = "\t")
+
+
 #Create STAR.counts subset that just contains transcripts with more than 2 or more counts per million reads 
 STAR.counts.subset <- STAR.counts[apply(STAR.counts.cpm >= 2, 1, all),]  
   
- 
-
 # BUILD METADATA ______________________________________________________________________________________
 
 #Generate sample table containing experiment information 
@@ -172,7 +176,7 @@ sample.table$replicate <- gsub("^.*_NAA_", "", sample.table$sample)
 sample.table$replicate <- gsub("^.*_Ctrl_", "", sample.table$replicate)
 
 #optional: write sample table to file for export
-#write.table(sample.table, "./sample_table.txt", quote = FALSE, row.names = FALSE)
+#write.table(sample.table, "./sample_table.txt", quote = FALSE, row.names = TRUE, sep = ",")
 
 dds.overall <- DESeqDataSetFromMatrix(STAR.counts.subset,
                                   colData = sample.table,
@@ -417,8 +421,8 @@ dds.interaction <- estimateSizeFactors(dds.interaction)
 
 #Extract results with applied filters for p-value and log2 foldchange threshold
 #Set p-value (set the variable here, so the results function and any manual filtering later rely on the same value)
-p.val <- 0.05
-fc.limit <- 1
+p.val <- 0.9
+fc.limit <- 0
 
 #write out possible results to choose what should be compared with eachother
 resultsNames(dds.interaction)
@@ -478,10 +482,42 @@ genes.sig.meta_interaction <- merge(genes.sig.meta_interaction, Gene.Metadata, a
   annotate("text", x = 4, y = 23, label = length(subset(plotdata_interaction, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
   theme_light(base_size = 9)+
   theme(axis.text = element_text(color = "black"))
-
 #Save volcano plot to file
 #ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/NAA/Volcano_interaction.pdf", width = 12, height = 12, units = "cm")
 
+#Plot normalized counts for specific genes depending on treatment or control conditions 
+#Highest up-regulated transcript under both conditions   
+AT2G23170_O <- plotCounts(dds.overall, gene = "AT2G23170", intgroup = c("treatment", "condition"), returnData = TRUE)
+ggplot(AT2G23170_O, aes(x = treatment, y = count))+
+  geom_point(position = position_jitter(w=0.1, h=0))+
+  scale_y_log10()+
+  stat_summary(fun = mean, geom = "line", aes(group = 1), color = "red")+
+  facet_grid(cols = vars(condition))
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/NAA/AT2G23170_interaction.pdf", width = 20, height = 10, units = "cm")
+
+#significant up-regulated transcript exclusively in polysome fractions, but difference to expression in total RNA samples was insignificant 
+AT1G14060_O <- plotCounts(dds.overall, gene = "AT1G14060", intgroup = c("treatment", "condition"), returnData = TRUE)
+ggplot(AT1G14060_O, aes(x = treatment, y = count))+
+  geom_point(position = position_jitter(w=0.1, h=0))+
+  scale_y_log10()+
+  stat_summary(fun = mean, geom = "line", aes(group = 1), color = "red")+
+  facet_grid(cols = vars(condition))
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/NAA/AT1G14060_interaction.pdf", width = 20, height = 10, units = "cm")
+
+  
+AT4G10910_T <- plotCounts(dds.Total_RNA, gene = "AT4G10910", intgroup = "treatment", returnData = TRUE)
+
+ggplot(AT4G10910_T, aes(x = treatment, y = count))+
+  geom_point(position = position_jitter(w=0.1, h=0))
+  #scale_y_log10()
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/NAA/AT4G10910_Total_RNA_interaction.pdf", width = 12, height = 12, units = "cm")
+
+AT4G10910_P <- plotCounts(dds.Total_RNA, gene = "AT4G10910", intgroup = "treatment", returnData = TRUE)
+
+ggplot(AT4G10910_P, aes(x = treatment, y = count))+
+  geom_point(position = position_jitter(w=0.1, h=0))+
+scale_y_log10()
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/NAA/AT4G10910_Total_RNA_interaction.pdf", width = 12, height = 12, units = "cm")  
   
 #Individual analysis for each condition depending on the treatment ####################################################################################################################################
 # BUILD METADATA FOR CTRL SAMPLES ______________________________________________________________________________________
@@ -934,6 +970,7 @@ combined_df <- merge(total_DEGs_Total_RNA_df, total_DEGs_Polysome_Fractions_df, 
 combined_df$Significance <- "grey80"  # Initialize all as neutral
 combined_df$alpha <- 0
 combined_df$Significance[(abs(combined_df$log2FoldChange.x) >= fc.limit & combined_df$padj.x <= p.val)] <- "#FFB178FF"
+combined_df$Significance[combined_df$ID %in% rownames(genes.sig_interaction)]<- "magenta"  
 combined_df$Significance[(abs(combined_df$log2FoldChange.y) >= fc.limit & combined_df$padj.y <= p.val)] <- "#A56457FF"
 combined_df$Significance[
   (abs(combined_df$log2FoldChange.x) >= fc.limit & combined_df$padj.x <= p.val) &
@@ -944,12 +981,79 @@ combined_df$alpha[combined_df$Significance != "grey80"] <- 1
 ggplot(data = combined_df, aes(x = combined_df$log2FoldChange.x, y = combined_df$log2FoldChange.y))+
   geom_point(color = combined_df$Significance, alpha = combined_df$alpha)+
   geom_smooth(method = "lm", se = FALSE, color = "grey")+
+  geom_abline(intercept = 0, slope = 1)+
   labs(title = "log2FoldChanges from polysome enriched and total RNA samples", x = "Log2FoldChanges Total_RNA samples", y = "Log2FoldChanges Polysome enriched samples")+
   theme_minimal()+
   theme_light(base_size = 9)
 #Save volcano plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Scatterplot_Total_RNA_vs_Polysomes_unfiltered.pdf", width = 12, height = 12, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Scatterplot_Total_RNA_vs_Polysomes_unfiltered_interaction.pdf", width = 15, height = 15, units = "cm")
 
+library(gridExtra)
+library(grid)
+
+#merging and filtering data frame
+genes.sig.meta_Polysome_Fractions <- merge(genes.sig.meta_Polysome_Fractions, Gene.Metadata, all.x = TRUE, all.y = FALSE)
+combined_df_meta <- merge(combined_df, Gene.Metadata, all.x = TRUE, all.y = FALSE)
+
+table_excl_in_P <- combined_df_meta[grep("#A56457FF", combined_df_meta$Significance), ]
+table_excl_in_P <- table_excl_in_P[order(-table_excl_in_P$log2FoldChange.y), ]
+table_excl_in_P <- head(table_excl_in_P, 10) 
+
+genes.sig.grouped <- table_excl_in_P[, c(1,17,9,13,3,7)] 
+
+table_excl_in_T <- combined_df_meta[grep("#FFB178FF", combined_df_meta$Significance), ]
+table_excl_in_T <- table_excl_in_T[order(-table_excl_in_T$log2FoldChange.x), ]
+table_excl_in_T <- head(table_excl_in_T, 10)
+
+genes.sig.grouped <- rbind(genes.sig.grouped, table_excl_in_T[, c(1,17,9,13,3,7)])
+
+combined_df_meta <- combined_df_meta[order(-combined_df_meta$log2FoldChange.x), ]
+combined_df_meta <- head(combined_df_meta, 10)
+
+genes.sig.grouped <- rbind(genes.sig.grouped, combined_df_meta[, c(1,17,9,13,3,7)]) 
+
+#Renaming columns 
+colnames(genes.sig.grouped)[colnames(genes.sig.grouped) == "log2FoldChange.y"] <- "log2FoldChange"
+colnames(genes.sig.grouped)[colnames(genes.sig.grouped) == "log2FoldChange.x"] <- "total RNA log2FoldChange"
+colnames(genes.sig.grouped)[colnames(genes.sig.grouped) == "padj.y"] <- "padj"
+colnames(genes.sig.grouped)[colnames(genes.sig.grouped) == "padj.x"] <- "total RNA padj"
+
+# Round the relevant columns to two decimal places
+genes.sig.grouped$log2FoldChange <- round(genes.sig.grouped$log2FoldChange, 2)
+genes.sig.grouped$padj <- round(genes.sig.grouped$padj, 3)
+genes.sig.grouped$`total RNA log2FoldChange`<- round(genes.sig.grouped$`total RNA log2FoldChange`, 2) 
+genes.sig.grouped$`total RNA padj` <- round(genes.sig.grouped$`total RNA padj`, 3)
+
+#Renaming columns
+colnames(genes.sig.grouped)[colnames(genes.sig.grouped) == "total RNA log2FoldChange"] <- "log2FoldChange"
+colnames(genes.sig.grouped)[colnames(genes.sig.grouped) == "total RNA padj"] <- "padj"
+
+#adjust symbol column 
+genes.sig.grouped$Symbol <- gsub(",.*$", "", genes.sig.grouped$Symbol)
+
+# Define row colors with transparency 
+row_colors <- c(adjustcolor("#A56457FF", alpha.f = 0.8),
+                adjustcolor("#FFB178FF", alpha.f = 0.8),
+                adjustcolor("#DFBBC8FF", alpha.f = 0.8))
+
+# Repeat the colors for the number of rows needed
+row_colors <- rep(row_colors, each = 10)
+
+# Create a table grob with background colors for rows
+table_grob <- tableGrob(
+  genes.sig.grouped,
+  theme = ttheme_default(
+    core = list(
+      bg_params = list(fill = row_colors),  # Set background colors
+      fg_params = list(col = "black")  # Text color
+    )
+  )
+)
+
+#Safe table as PDF file
+pdf("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Genes.sig.grouped.pdf", width = 20, height = 20)
+grid.draw(table_grob)
+dev.off()
 
 #Building Venn diagrams comparing NAA treatment vs Ctrl in Total_RNA and Polysome enriched samples 
 
@@ -1486,3 +1590,22 @@ ridgeplot(gse_Ctrl_CC)+
 #Save plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSamples/RidgeplotGOCC_Ctrls.pdf", width = 15, height = 30, units = "cm")
 
+#Build table with significant top 10 transcripts for total RNA samples, polysome fractions and in both 
+sorted_genes.sig.meta_Polysome_Fractions <- genes.sig.meta_Polysome_Fractions[order(-genes.sig.meta_Polysome_Fractions$log2FoldChange), ] 
+sorted_genes.sig.meta_Polysome_Fractions <- head(sorted_genes.sig.meta_Polysome_Fractions, 10)
+table <- sorted_genes.sig.meta_Polysome_Fractions[, c(1,3,7,9)]
+
+sorted_genes.sig.meta_Total_RNA <- genes.sig.meta_Total[order(-genes.sig.meta_Total$log2FoldChange), ]
+sorted_genes.sig.meta_Total_RNA <- head(sorted_genes.sig.meta_Total_RNA, 10)
+table <- rbind(table, sorted_genes.sig.meta_Total_RNA[, c(1,3,7,9)])  
+
+common_genes <- intersect(genes.sig.meta_Polysome_Fractions$ID, genes.sig.meta_Total$ID)
+common_df <- genes.sig.meta_Polysome_Fractions[genes.sig.meta_Polysome_Fractions$ID %in% common_genes, ]
+
+exclusive.sig.genes.meta_Polysome_Fractions <- genes.sig.meta_Polysome_Fractions[!(genes.sig.meta_Polysome_Fractions$ID %in% genes.sig.meta_Total$ID)]
+
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Ribo-Seq #####################################################################################################
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+# PREPARE RAW DATA ############################################################################################
