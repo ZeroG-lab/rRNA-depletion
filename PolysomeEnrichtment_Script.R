@@ -56,7 +56,7 @@ library("VennDiagram")
 library("paletteer")
 library("MetBrewer")
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# RNA-Seq #####################################################################################################
+# RNA-Seq of polysome enriched and total RNA samples ##########################################################
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # PREPARE RAW DATA ############################################################################################
@@ -322,33 +322,6 @@ genes.sig.meta <- genes.sig
 genes.sig.meta$ID <- rownames(genes.sig.meta)
 Gene.Metadata <- read.table("Y:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
 genes.sig.meta <- merge(genes.sig.meta, Gene.Metadata, all.x = TRUE, all.y = FALSE)
-
-#Build plot of Auxin-induced gene families
-genes.sig.auxin <- data.frame("Family" = factor(rep(c("SAUR", "Aux/IAA", "GH3", "ARF"), each = 3), levels = c("SAUR", "Aux/IAA", "GH3", "ARF")),
-                              "Number" = c(
-                                length(grep("SAUR", Gene.Metadata$Symbol, value = TRUE))-length(grep("SAUR", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE))-length(grep("SAUR", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
-                                length(grep("SAUR", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE)),
-                                length(grep("SAUR", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
-                                length(grep("^IAA| IAA", Gene.Metadata$Symbol, value = TRUE))-length(grep("^IAA| IAA", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE))-length(grep("^IAA| IAA", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
-                                length(grep("^IAA| IAA", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE)),
-                                length(grep("^IAA| IAA", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
-                                length(grep("GH3\\.", Gene.Metadata$Symbol, value = TRUE))- length(grep("GH3\\.", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE))-length(grep("GH3\\.", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
-                                length(grep("GH3\\.", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE)),
-                                length(grep("GH3\\.", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
-                                length(grep("^ARF[0-9]| ARF[0-9]", Gene.Metadata$Symbol, value = TRUE))-length(grep("^ARF[0-9]| ARF[0-9]", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE))-length(grep("^ARF[0-9]| ARF[0-9]", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
-                                length(grep("^ARF[0-9]| ARF[0-9]", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE)),
-                                length(grep("^ARF[0-9]| ARF[0-9]", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE))
-                              ),
-                              "Regulation" = factor(rep(c("None", "Up", "Down"), 4), levels = c("None", "Up", "Down"))
-)
-
-ggplot(genes.sig.auxin, aes(Family, Number, fill = Regulation))+
-  geom_col()+
-  scale_fill_manual(values = c("grey80", met.brewer("Morgenstern", 8)[7], met.brewer("Morgenstern", 8)[2]))+
-  ylab("Number of Genes")+
-  xlab("Gene Family")+
-  theme_light(base_size = 9)+
-  theme(axis.text = element_text(color = "black"), legend.position = "right")
 
 #Build plot of Auxin-induced gene families
 genes.sig.auxin <- data.frame("Family" = factor(rep(c("SAUR", "Aux/IAA", "GH3", "ARF"), each = 4), levels = c("SAUR", "Aux/IAA", "GH3", "ARF")),
@@ -1124,14 +1097,6 @@ venn.diagram(list("Total_RNA_down" = Venn.Total_RNA.down, "Polysome_down" = Venn
              disable.logging = TRUE,
              imagetype = "png")
 
-#Between NAA vs. Ctrl conditions 
-venn.diagram(list("Ctrl_up" = Venn.Ctrl.up, "Ctrl_down" = Venn.Ctrl.down, "NAA_up" = Venn.NAA.up, "NAA_down" = Venn.NAA.down),
-             filename = "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Venn_NAA_vs_Ctrl.png",
-             fill = c("#6F9969FF", "#EFC86EFF", "#454A74FF", "#97C684FF"),
-             cat.pos = c(-5,5,-2,2),
-             disable.logging = TRUE,
-             imagetype = "png")
-
 #Gene Ontology (GO) Enrichment Analysis ############################################################################################################
 
 #Function to prepare named and sorted gene lists for GO enrichment from DESeq2 results object
@@ -1638,7 +1603,7 @@ common_df <- genes.sig.meta_Polysome_Fractions[genes.sig.meta_Polysome_Fractions
 exclusive.sig.genes.meta_Polysome_Fractions <- genes.sig.meta_Polysome_Fractions[!(genes.sig.meta_Polysome_Fractions$ID %in% genes.sig.meta_Total$ID)]
 
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Ribo-Seq #####################################################################################################
+# Ribo-Seq analyses to compare occurence of rRNA fragments under different growth conditions  #################
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # PREPARE RAW DATA ############################################################################################
@@ -2229,23 +2194,12 @@ RiboseQC_analysis(annotation_file = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/Ann
                   extended_report = FALSE,
                   stranded = FALSE)
 
+#create HTML report 
 setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/STAR_Output/")
 create_html_report(input_files = list.files(pattern = "results", path = "."),
                    input_sample_names = c("3wLR1","3wLR2", "2wSR1", "2wSR2", "8dLR1", "8dLR2", "8dSR1","8dSR2", "ER1", "ER2", "LmR1", "LmR2", "LpR1", "LpR2", "SmR1", "SmR2", "SpR1", "SpR2"),
                    output_file = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/STAR_Output/report.html",
                    extended = FALSE)
-
-
-#detach("package:RiboseQC", unload = TRUE)
-
-#detach("package:rmarkdown", unload = TRUE)
-#detach("package:knitr", unload = TRUE)
-#remove.packages("RiboseQC")
-#remove.packages("rmarkdown")
-#remove.packages("knitr")
-#install.packages("remotes")
-#remotes::install_version("knitr", version = "1.42")
-#remotes::install_version("rmarkdown", version = "2.19")
 
 #filter raw data based on sequence length 
 setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/filtered/")
