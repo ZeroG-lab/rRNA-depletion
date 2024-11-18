@@ -27,7 +27,7 @@
 
 #install.packages("MetBrewer")
 #install.packages("paletteer")
-#install_github(repo = "lcalviell/Ribo-seQC")
+install_github(repo = "lcalviell/Ribo-seQC")
 
 library("DESeq2")
 library("BiocManager")
@@ -349,6 +349,39 @@ ggplot(genes.sig.auxin, aes(Family, Number, fill = Regulation))+
   xlab("Gene Family")+
   theme_light(base_size = 9)+
   theme(axis.text = element_text(color = "black"), legend.position = "right")
+
+#Build plot of Auxin-induced gene families
+genes.sig.auxin <- data.frame("Family" = factor(rep(c("SAUR", "Aux/IAA", "GH3", "ARF"), each = 4), levels = c("SAUR", "Aux/IAA", "GH3", "ARF")),
+                              "Number" = c(
+                                length(which(rowSums(STAR.counts[Gene.Metadata$ID[grep("SAUR", Gene.Metadata$Symbol)],]) < 17)),
+                                length(grep("SAUR", Gene.Metadata$Symbol, value = TRUE))-length(grep("SAUR", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE))-length(grep("SAUR", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE))-length(which(rowSums(STAR.counts[Gene.Metadata$ID[grep("SAUR", Gene.Metadata$Symbol)],]) < 17)),
+                                length(grep("SAUR", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE)),
+                                length(grep("SAUR", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
+                                length(which(rowSums(STAR.counts[Gene.Metadata$ID[grep("^IAA| IAA", Gene.Metadata$Symbol)],]) < 17)),
+                                length(grep("^IAA| IAA", Gene.Metadata$Symbol, value = TRUE))-length(grep("^IAA| IAA", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE))-length(grep("^IAA| IAA", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE))-length(which(rowSums(STAR.counts[Gene.Metadata$ID[grep("^IAA| IAA", Gene.Metadata$Symbol)],]) < 17)),
+                                length(grep("^IAA| IAA", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE)),
+                                length(grep("^IAA| IAA", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
+                                length(which(rowSums(STAR.counts[Gene.Metadata$ID[grep("GH3\\.", Gene.Metadata$Symbol)],]) < 17)),
+                                length(grep("GH3\\.", Gene.Metadata$Symbol, value = TRUE))- length(grep("GH3\\.", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE))-length(grep("GH3\\.", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE))-length(which(rowSums(STAR.counts[Gene.Metadata$ID[grep("GH3\\.", Gene.Metadata$Symbol)],]) < 17)),
+                                length(grep("GH3\\.", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE)),
+                                length(grep("GH3\\.", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE)),
+                                length(which(rowSums(STAR.counts[Gene.Metadata$ID[grep("^ARF[0-9]| ARF[0-9]", Gene.Metadata$Symbol)],]) < 17)),
+                                length(grep("^ARF[0-9]| ARF[0-9]", Gene.Metadata$Symbol, value = TRUE))-length(grep("^ARF[0-9]| ARF[0-9]", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE))-length(grep("^ARF[0-9]| ARF[0-9]", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE))-length(which(rowSums(STAR.counts[Gene.Metadata$ID[grep("^ARF[0-9]| ARF[0-9]", Gene.Metadata$Symbol)],]) < 17)),
+                                length(grep("^ARF[0-9]| ARF[0-9]", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE)),
+                                length(grep("^ARF[0-9]| ARF[0-9]", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE))
+                              ),
+                              "Regulation" = factor(rep(c("Unexpressed", "None", "Up", "Down"), 4), levels = c("Unexpressed", "None", "Up", "Down"))
+)
+
+
+ggplot(genes.sig.auxin, aes(Family, Number, fill = Regulation))+
+  geom_col()+
+  scale_fill_manual(values = c("grey90", "grey80", met.brewer("Morgenstern", 8)[7], met.brewer("Morgenstern", 8)[2]))+
+  ylab("Number of Genes")+
+  xlab("Gene Family")+
+  theme_light(base_size = 9)+
+  theme(axis.text = element_text(color = "black"), legend.position = "right")
+
 #Save plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/NAA/AuxGenes.pdf", width = 12, height = 12, units = "cm")
 
@@ -1609,3 +1642,757 @@ exclusive.sig.genes.meta_Polysome_Fractions <- genes.sig.meta_Polysome_Fractions
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # PREPARE RAW DATA ############################################################################################
+
+#Concatenate files from different lanes into single file
+#Rename files to a uniform format if not already done 
+#setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/cleaned") 
+#file.rename(dir(), gsub("-SMALLRNA.*Seq", "",dir()))
+#Only work with gzipped files for more efficient storage
+#Keep all files in a single folder
+
+# QUALITY CONTROL _____________________________________________________________________________________________
+
+#Run FastQC on the read files
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/cleaned/") #switch to directory containing the reads
+system(paste("wsl fastqc *.fastq.gz --outdir ../FastQC/")) #Run FastQC over all files and save results to specified folder
+
+# SET DIRECTORIES _____________________________________________________________________________________________
+
+#Set linux path to genome directory
+genomeDir <- "/mnt/y/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations/STAR_Index"
+#Set linux path to genome fasta file
+genomeFastaFiles <- "/mnt/y/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations/TAIR10_chr_all.fas"
+#Set linux path to annotation GTF file
+GTFfile <- "/mnt/y/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations/Araport11_GTF_genes_transposons.20241001.gtf"
+
+# STAR MAPPING ################################################################################################
+
+#Generate Reference Genome 
+system(paste("wsl ~/STAR-2.7.11b/source/STAR",
+             "--runThreadN 30", #number of threads to use for computation
+             "--runMode genomeGenerate", #run mode to generate index
+             "--genomeDir", genomeDir, #directory in which to store the index (see above)
+             "--genomeFastaFiles", genomeFastaFiles, #directory of the genome fasta (see above)
+             "--sjdbGTFfile", GTFfile, #directory of the annotation (see above)
+             "--sjdbOverhang 63", # max read length - 1
+             "--genomeSAindexNbases 12")) #length of SA pre-indexing string, scaled to Arabidopsis genome according to manual: min(14, log2(GenomeLength)/2 - 1)
+
+#Run STAR mapping in single-end mode 
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/cleaned/") #switch to directory containing the reads
+
+for (k in list.files(pattern = ".fastq.gz$")) { 
+  system(paste0("wsl echo \"Processing ", k, "\"; ~/STAR-2.7.11b/source/STAR ",
+                "--readFilesCommand zcat ",
+                "--genomeDir ", genomeDir, " ",
+                "--readFilesIn ", k, " ",
+                "--outFileNamePrefix ~/STAR_Output/", gsub("fastq\\.gz$", "", k), " ",
+                "--quantMode GeneCounts ",
+                "--runThreadN 12 ", 
+                "--alignSJoverhangMin 8 ", 
+                "--alignSJDBoverhangMin 2 ", 
+                "--outSAMtype BAM SortedByCoordinate ", 
+                "--outSAMmultNmax 1 ", 
+                "--outMultimapperOrder Random ", 
+                "--outFilterMismatchNmax 1 ", 
+                "--outFilterMultimapNmax 20 ", 
+                "--outFilterType BySJout ", 
+                "--outReadsUnmapped Fastx"))
+  print("Moving STAR Output from Linux filesystem to Windows...")
+  system("wsl mv ~/STAR_Output/* /mnt/y/Omics/RiboSeq/Growth_Conditions_rRNA/STAR_Output/")
+  print("Done")
+}
+
+
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA") #switch back to original working directory
+
+#MultiQC #####################################################################################################
+
+#run MultiQC to get a summarised report
+#run in Ubuntu shell because it's not working with the system("wsl ...") command,  
+# cd /mnt/y/Omics/RiboSeq/Growth_Conditions_rRNA/ #set working directory
+# multiqc . -o MultiQC/ #performing MultiQC analysis with data from working directory, MultiQC report will be saved in the defined output directory 
+
+# STAR DATA IMPORT ###########################################################################################
+
+#Set working directory of data to be analyzed
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/")
+
+#Set strandedness of the library (influences which counts to read from STAR count files)
+# 2 = unstranded
+# 3 = 1st read strand (stranded = yes)
+# 4 = 2nd read strand (stranded = reverse)
+strnd <- 2
+
+#Read the counts of each samples ReadsPerGene file and cbind them
+for (i in list.files("./STAR_Output/", pattern = "ReadsPerGene", full.names = TRUE)) {
+  temp <- read.table(i)
+  head(temp)
+  temp <- temp[-c(1:4),]
+  
+  if(grep(i, list.files("./STAR_Output/", pattern = "ReadsPerGene", full.names = TRUE)) == 1){
+    STAR.counts <- data.frame(temp[,strnd])
+    row.names(STAR.counts) <- temp[,1]
+  }else{
+    STAR.counts <- cbind(STAR.counts, temp[,strnd])
+    colnames(STAR.counts) <- gsub("\\.ReadsPerGene.*$","",list.files("./STAR_Output/", pattern = "ReadsPerGene")[1:length(colnames(STAR.counts))])
+  }
+  rm(temp,i)
+}
+
+## RIBOSEQC ____________________________________________________________________
+
+### If not already done, get twobit programs and place them in F:\Annotations_RNASeq
+### Download faToTwoBit program from: http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/faToTwoBit
+### Download twoBitInfo program from: http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/twoBitInfo
+### Tutorial: https://genome.ucsc.edu/goldenpath/help/twoBit.html
+
+### PREPARE TWOBIT FILE 
+system("wsl /mnt/y/Omics/Annotations_RNASeq/faToTwoBit /mnt/y/Omics/Annotations_RNASeq/TAIR10_chr_all.fas /mnt/y/Omics/Annotations_RNASeq/genome.2bit")
+### CHECK TWOBIT FILE INTEGRITY 
+system("wsl /mnt/y/Omics/Annotations_RNASeq/twoBitInfo /mnt/y/Omics/Annotations_RNASeq/genome.2bit stdout | sort -k2rn")
+
+### MODIFY PREPARE_ANNOTATION_FILES FUNCTION TO PROPERLY EXTRACT EXON INFORMATION 
+prepare_annotation_files <- function (annotation_directory, twobit_file, gtf_file, scientific_name = "Homo.sapiens", 
+                                      annotation_name = "genc25", export_bed_tables_TxDb = T, 
+                                      forge_BSgenome = T, create_TxDb = T) 
+{
+  DEFAULT_CIRC_SEQS <- unique(c("chrM", "MT", "MtDNA", "mit", 
+                                "Mito", "mitochondrion", "dmel_mitochondrion_genome", 
+                                "Pltd", "ChrC", "Pt", "chloroplast", "Chloro", "2micron", 
+                                "2-micron", "2uM", "Mt", "NC_001879.2", "NC_006581.1", 
+                                "ChrM", "mitochondrion_genome"))
+  annotation_name <- gsub(annotation_name, pattern = "_", 
+                          replacement = "")
+  annotation_name <- gsub(annotation_name, pattern = "-", 
+                          replacement = "")
+  if (!dir.exists(annotation_directory)) {
+    dir.create(path = annotation_directory, recursive = T)
+  }
+  annotation_directory <- normalizePath(annotation_directory)
+  twobit_file <- normalizePath(twobit_file)
+  gtf_file <- normalizePath(gtf_file)
+  for (f in c(twobit_file, gtf_file)) {
+    if (file.access(f, 0) == -1) {
+      stop("\n                 The following files don't exist:\n", 
+           f, "\n")
+    }
+  }
+  scientific_name_spl <- strsplit(scientific_name, "[.]")[[1]]
+  ok <- length(scientific_name_spl) == 2
+  if (!ok) {
+    stop("\"scientific_name\" must be two words separated by a \".\", like \"Homo.sapiens\"")
+  }
+  seqinfotwob <- seqinfo(TwoBitFile(twobit_file))
+  circss <- seqnames(seqinfotwob)[which(seqnames(seqinfotwob) %in% 
+                                          DEFAULT_CIRC_SEQS)]
+  seqinfotwob@is_circular[which(seqnames(seqinfotwob) %in% 
+                                  DEFAULT_CIRC_SEQS)] <- TRUE
+  pkgnm <- paste("BSgenome", scientific_name, annotation_name, 
+                 sep = ".")
+  circseed <- circss
+  if (length(circseed) == 0) {
+    circseed <- NULL
+  }
+  if (forge_BSgenome) {
+    cat(paste("Creating the BSgenome package ... ", date(), 
+              "\n", sep = ""))
+    seed_text <- paste("Package: BSgenome.", scientific_name, 
+                       ".", annotation_name, "\n", "Title: Full genome sequences for ", 
+                       scientific_name, ", ", annotation_name, "\n", "Description: Full genome sequences for ", 
+                       scientific_name, ", ", annotation_name, "\n", "Version: 1.0", 
+                       "\n", "organism: ", scientific_name, "\n", "common_name: ", 
+                       scientific_name, "\n", "provider: NA", "\n", "provider_version: ", 
+                       annotation_name, "\n", "release_date: NA", "\n", 
+                       "release_name: NA", "\n", "source_url: NA", "\n", 
+                       "organism_biocview: ", scientific_name, "\n", "BSgenomeObjname: ", 
+                       scientific_name, "\n", "seqs_srcdir: ", dirname(twobit_file), 
+                       "\n", "seqfile_name: ", basename(twobit_file), sep = "")
+    seed_dest <- paste(annotation_directory, "/", basename(twobit_file), 
+                       "_", scientific_name, "_seed", sep = "")
+    if (length(circseed) == 0) {
+      writeLines(text = seed_text, con = seed_dest)
+    }
+    if (length(circseed) == 1) {
+      seed_text <- paste(seed_text, "\n", "circ_seqs: \"", 
+                         circseed, "\"", sep = "")
+      writeLines(text = seed_text, con = seed_dest)
+    }
+    if (length(circseed) > 1) {
+      circseed <- paste("c(\"", paste(circseed, collapse = ","), 
+                        "\")", sep = "")
+      circseed <- gsub(circseed, pattern = ",", replacement = "\",\"")
+      cat(seed_text, "\n", "circ_seqs: ", circseed, "\n", 
+          sep = "", file = seed_dest)
+    }
+    unlink(paste(annotation_directory, pkgnm, sep = "/"), 
+           recursive = T)
+    forgeBSgenomeDataPkg(x = seed_dest, destdir = annotation_directory, 
+                         seqs_srcdir = dirname(twobit_file))
+    cat(paste("Creating the BSgenome package --- Done! ", 
+              date(), "\n", sep = ""))
+    cat(paste("Installing the BSgenome package ... ", date(), 
+              "\n", sep = ""))
+    install(paste(annotation_directory, pkgnm, sep = "/"), 
+            upgrade = F)
+    cat(paste("Installing the BSgenome package --- Done! ", 
+              date(), "\n", sep = ""))
+  }
+  if (create_TxDb) {
+    cat(paste("Creating the TxDb object ... ", date(), "\n", 
+              sep = ""))
+    annotation <- makeTxDbFromGFF(file = gtf_file, format = "gtf", 
+                                  chrominfo = seqinfotwob)
+    saveDb(annotation, file = paste(annotation_directory, 
+                                    "/", basename(gtf_file), "_TxDb", sep = ""))
+    cat(paste("Creating the TxDb object --- Done! ", date(), 
+              "\n", sep = ""))
+    cat(paste("Extracting genomic regions ... ", date(), 
+              "\n", sep = ""))
+    genes <- genes(annotation)
+    exons_ge <- exonsBy(annotation, by = "gene")
+    exons_ge <- reduce(exons_ge)
+    cds_gen <- cdsBy(annotation, "gene")
+    cds_ge <- reduce(cds_gen)
+    threeutrs <- reduce(GenomicRanges::setdiff(unlist(threeUTRsByTranscript(annotation)), 
+                                               unlist(cds_ge), ignore.strand = FALSE))
+    fiveutrs <- reduce(GenomicRanges::setdiff(unlist(fiveUTRsByTranscript(annotation)), 
+                                              unlist(cds_ge), ignore.strand = FALSE))
+    introns <- reduce(GenomicRanges::setdiff(unlist(intronsByTranscript(annotation)), 
+                                             unlist(exons_ge), ignore.strand = FALSE))
+    nc_exons <- reduce(GenomicRanges::setdiff(unlist(exons_ge), 
+                                              reduce(c(unlist(cds_ge), fiveutrs, threeutrs)), 
+                                              ignore.strand = FALSE))
+    ov <- findOverlaps(threeutrs, genes)
+    ov <- split(subjectHits(ov), queryHits(ov))
+    threeutrs$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      names(genes)[x]
+    }))
+    ov <- findOverlaps(fiveutrs, genes)
+    ov <- split(subjectHits(ov), queryHits(ov))
+    fiveutrs$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      names(genes)[x]
+    }))
+    ov <- findOverlaps(introns, genes)
+    ov <- split(subjectHits(ov), queryHits(ov))
+    introns$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      names(genes)[x]
+    }))
+    ov <- findOverlaps(nc_exons, genes)
+    ov <- split(subjectHits(ov), queryHits(ov))
+    nc_exons$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      names(genes)[x]
+    }))
+    intergenicRegions <- genes
+    strand(intergenicRegions) <- "*"
+    intergenicRegions <- gaps(reduce(intergenicRegions))
+    intergenicRegions <- intergenicRegions[strand(intergenicRegions) == 
+                                             "*"]
+    cds_tx <- cdsBy(annotation, "tx", use.names = T)
+    txs_gene <- transcriptsBy(annotation, by = "gene")
+    genes_red <- reduce(sort(genes(annotation)))
+    exons_tx <- exonsBy(annotation, "tx", use.names = T)
+    transcripts_db <- transcripts(annotation)
+    intron_names_tx <- intronsByTranscript(annotation, use.names = T)
+    nsns <- exonicParts(annotation)
+    exsss_cds <- exons_tx[names(cds_tx)]
+    chunks <- seq(1, length(cds_tx), by = 20000)
+    if (chunks[length(chunks)] < length(cds_tx)) {
+      chunks <- c(chunks, length(cds_tx))
+    }
+    mapp <- GRangesList()
+    for (i in 1:(length(chunks) - 1)) {
+      if (i != (length(chunks) - 1)) {
+        mapp <- suppressWarnings(c(mapp, pmapToTranscripts(cds_tx[chunks[i]:(chunks[i + 
+                                                                                      1] - 1)], transcripts = exsss_cds[chunks[i]:(chunks[i + 
+                                                                                                                                            1] - 1)])))
+      }
+      if (i == (length(chunks) - 1)) {
+        mapp <- suppressWarnings(c(mapp, pmapToTranscripts(cds_tx[chunks[i]:(chunks[i + 
+                                                                                      1])], transcripts = exsss_cds[chunks[i]:(chunks[i + 
+                                                                                                                                        1])])))
+      }
+    }
+    cds_txscoords <- unlist(mapp)
+    cat(paste("Extracting ids and biotypes ... ", date(), 
+              "\n", sep = ""))
+    trann <- unique(mcols(import.gff2(gtf_file, colnames = c("gene_id", 
+                                                             "gene_biotype", "gene_type", "gene_name", "gene_symbol", 
+                                                             "transcript_id", "transcript_biotype", "transcript_type"))))
+    trann <- trann[!is.na(trann$transcript_id), ]
+    trann <- data.frame(unique(trann), stringsAsFactors = F)
+    if (sum(!is.na(trann$transcript_biotype)) == 0 & sum(!is.na(trann$transcript_type)) == 
+        0) {
+      trann$transcript_biotype <- "no_type"
+    }
+    if (sum(!is.na(trann$transcript_biotype)) == 0) {
+      trann$transcript_biotype <- NULL
+    }
+    if (sum(!is.na(trann$transcript_type)) == 0) {
+      trann$transcript_type <- NULL
+    }
+    if (sum(!is.na(trann$gene_biotype)) == 0 & sum(!is.na(trann$gene_type)) == 
+        0) {
+      trann$gene_type <- "no_type"
+    }
+    if (sum(!is.na(trann$gene_name)) == 0 & sum(!is.na(trann$gene_symbol)) == 
+        0) {
+      trann$gene_name <- "no_name"
+    }
+    if (sum(!is.na(trann$gene_biotype)) == 0) {
+      trann$gene_biotype <- NULL
+    }
+    if (sum(!is.na(trann$gene_type)) == 0) {
+      trann$gene_type <- NULL
+    }
+    if (sum(!is.na(trann$gene_name)) == 0) {
+      trann$gene_name <- NULL
+    }
+    if (sum(!is.na(trann$gene_symbol)) == 0) {
+      trann$gene_symbol <- NULL
+    }
+    colnames(trann) <- c("gene_id", "gene_biotype", "gene_name", 
+                         "transcript_id", "transcript_biotype")
+    trann <- DataFrame(trann)
+    unq_intr <- sort(unique(unlist(intron_names_tx)))
+    names(unq_intr) <- NULL
+    all_intr <- unlist(intron_names_tx)
+    ov <- findOverlaps(unq_intr, all_intr, type = "equal")
+    ov <- split(subjectHits(ov), queryHits(ov))
+    a_nam <- CharacterList(lapply(ov, FUN = function(x) {
+      unique(names(all_intr)[x])
+    }))
+    unq_intr$type = "J"
+    unq_intr$tx_name <- a_nam
+    mat_genes <- match(unq_intr$tx_name, trann$transcript_id)
+    g <- unlist(apply(cbind(1:length(mat_genes), Y = elementNROWS(mat_genes)), 
+                      FUN = function(x) rep(x[1], x[2]), MARGIN = 1))
+    g2 <- split(trann[unlist(mat_genes), "gene_id"], g)
+    unq_intr$gene_id <- CharacterList(lapply(g2, unique))
+    ncrnas <- nc_exons[!nc_exons %over% genes[trann$gene_id[trann$gene_biotype == 
+                                                              "protein_coding"]]]
+    ncisof <- nc_exons[nc_exons %over% genes[trann$gene_id[trann$gene_biotype == 
+                                                             "protein_coding"]]]
+    ifs <- seqinfo(annotation)
+    translations <- as.data.frame(ifs)
+    translations$genetic_code <- "1"
+    translations$genetic_code[rownames(translations) %in% 
+                                c("chrM", "MT", "MtDNA", "mit", "mitochondrion")] <- "2"
+    translations$genetic_code[rownames(translations) %in% 
+                                c("Mito")] <- "3"
+    translations$genetic_code[rownames(translations) %in% 
+                                c("dmel_mitochondrion_genome")] <- "5"
+    circs <- ifs@seqnames[which(ifs@is_circular)]
+    suppressPackageStartupMessages(library(pkgnm, character.only = TRUE))
+    genome <- get(pkgnm)
+    tocheck <- as.character(runValue(seqnames(cds_tx)))
+    tocheck <- cds_tx[!tocheck %in% circs]
+    seqcds <- extractTranscriptSeqs(genome, transcripts = tocheck)
+    cd <- unique(translations$genetic_code[!rownames(translations) %in% 
+                                             circs])
+    trsl <- suppressWarnings(translate(seqcds, genetic.code = getGeneticCode(cd), 
+                                       if.fuzzy.codon = "solve"))
+    trslend <- as.character(narrow(trsl, end = width(trsl), 
+                                   width = 1))
+    stop_inannot <- NA
+    if (names(sort(table(trslend), decreasing = T)[1]) == 
+        "*") {
+      stop_inannot <- "*"
+    }
+    cds_txscoords$gene_id <- trann$gene_id[match(as.vector(seqnames(cds_txscoords)), 
+                                                 trann$transcript_id)]
+    cds_cc <- cds_txscoords
+    strand(cds_cc) <- "*"
+    sta_cc <- resize(cds_cc, width = 1, "start")
+    sta_cc <- unlist(pmapFromTranscripts(sta_cc, exons_tx[seqnames(sta_cc)], 
+                                         ignore.strand = F))
+    sta_cc$gene_id <- trann$gene_id[match(names(sta_cc), 
+                                          trann$transcript_id)]
+    sta_cc <- sta_cc[sta_cc$hit]
+    strand(sta_cc) <- structure(as.vector(strand(transcripts_db)), 
+                                names = transcripts_db$tx_name)[names(sta_cc)]
+    sta_cc$type <- "start_codon"
+    mcols(sta_cc) <- mcols(sta_cc)[, c("exon_rank", "type", 
+                                       "gene_id")]
+    sto_cc <- resize(cds_cc, width = 1, "end")
+    sto_cc <- shift(sto_cc, -2)
+    if (is.na(stop_inannot)) {
+      sto_cc <- resize(trim(shift(sto_cc, 3)), width = 1, 
+                       fix = "end")
+    }
+    sto_cc <- unlist(pmapFromTranscripts(sto_cc, exons_tx[seqnames(sto_cc)], 
+                                         ignore.strand = F))
+    sto_cc <- sto_cc[sto_cc$hit]
+    sto_cc$gene_id <- trann$gene_id[match(names(sto_cc), 
+                                          trann$transcript_id)]
+    strand(sto_cc) <- structure(as.vector(strand(transcripts_db)), 
+                                names = transcripts_db$tx_name)[names(sto_cc)]
+    sto_cc$type <- "stop_codon"
+    mcols(sto_cc) <- mcols(sto_cc)[, c("exon_rank", "type", 
+                                       "gene_id")]
+    cat(paste("Defining most common start/stop codons ... ", 
+              date(), "\n", sep = ""))
+    start_stop_cc <- sort(c(sta_cc, sto_cc))
+    start_stop_cc$transcript_id <- names(start_stop_cc)
+    start_stop_cc$most_up_downstream <- FALSE
+    start_stop_cc$most_frequent <- FALSE
+    df <- cbind.DataFrame(start(start_stop_cc), start_stop_cc$type, 
+                          start_stop_cc$gene_id)
+    colnames(df) <- c("start_pos", "type", "gene_id")
+    upst <- by(df$start_pos, INDICES = df$gene_id, function(x) {
+      x == min(x) | x == max(x)
+    })
+    start_stop_cc$most_up_downstream <- unlist(upst[unique(df$gene_id)])
+    mostfr <- by(df[, c("start_pos", "type")], INDICES = df$gene_id, 
+                 function(x) {
+                   mfreq <- table(x)
+                   x$start_pos %in% as.numeric(names(which(mfreq[, 
+                                                                 1] == max(mfreq[, 1])))) | x$start_pos %in% 
+                     as.numeric(names(which(mfreq[, 2] == max(mfreq[, 
+                                                                    2]))))
+                 })
+    start_stop_cc$most_frequent <- unlist(mostfr[unique(df$gene_id)])
+    names(start_stop_cc) <- NULL
+    mostupstr_tx <- sum(LogicalList(split(start_stop_cc$most_up_downstream, 
+                                          start_stop_cc$transcript_id)))[as.character(seqnames(cds_txscoords))]
+    cds_txscoords$upstr_stasto <- mostupstr_tx
+    mostfreq_tx <- sum(LogicalList(split(start_stop_cc$most_frequent, 
+                                         start_stop_cc$transcript_id)))[as.character(seqnames(cds_txscoords))]
+    cds_txscoords$mostfreq_stasto <- mostfreq_tx
+    cds_txscoords$lentx <- sum(width(exons_tx[as.character(seqnames(cds_txscoords))]))
+    df <- cbind.DataFrame(as.character(seqnames(cds_txscoords)), 
+                          width(cds_txscoords), start(cds_txscoords), cds_txscoords$mostfreq_stasto, 
+                          cds_txscoords$gene_id)
+    colnames(df) <- c("txid", "cdslen", "utr5len", "var", 
+                      "gene_id")
+    repres_freq <- by(df[, c("txid", "cdslen", "utr5len", 
+                             "var")], df$gene_id, function(x) {
+                               x <- x[order(x$var, x$utr5len, x$cdslen, decreasing = T), 
+                               ]
+                               x <- x[x$var == max(x$var), ]
+                               ok <- x$txid[which(x$cdslen == max(x$cdslen) & x$utr5len == 
+                                                    max(x$utr5len) & x$var == max(x$var))][1]
+                               if (length(ok) == 0 | is.na(ok[1])) {
+                                 ok <- x$txid[1]
+                               }
+                               ok
+                             })
+    df <- cbind.DataFrame(as.character(seqnames(cds_txscoords)), 
+                          width(cds_txscoords), start(cds_txscoords), cds_txscoords$upstr_stasto, 
+                          cds_txscoords$gene_id)
+    colnames(df) <- c("txid", "cdslen", "utr5len", "var", 
+                      "gene_id")
+    repres_upstr <- by(df[, c("txid", "cdslen", "utr5len", 
+                              "var")], df$gene_id, function(x) {
+                                x <- x[order(x$var, x$utr5len, x$utr5len, decreasing = T), 
+                                ]
+                                x <- x[x$var == max(x$var), ]
+                                ok <- x$txid[which(x$cdslen == max(x$cdslen) & x$utr5len == 
+                                                     max(x$utr5len) & x$var == max(x$var))][1]
+                                if (length(ok) == 0 | is.na(ok[1])) {
+                                  ok <- x$txid[1]
+                                }
+                                ok
+                              })
+    df <- cbind.DataFrame(as.character(seqnames(cds_txscoords)), 
+                          width(cds_txscoords), start(cds_txscoords), cds_txscoords$upstr_stasto, 
+                          cds_txscoords$gene_id)
+    colnames(df) <- c("txid", "cdslen", "utr5len", "var", 
+                      "gene_id")
+    repres_len5 <- by(df[, c("txid", "cdslen", "utr5len", 
+                             "var")], df$gene_id, function(x) {
+                               x <- x[order(x$utr5len, x$var, x$cdslen, decreasing = T), 
+                               ]
+                               ok <- x$txid[which(x$utr5len == max(x$utr5len) & 
+                                                    x$var == max(x$var))][1]
+                               if (length(ok) == 0 | is.na(ok[1])) {
+                                 ok <- x$txid[1]
+                               }
+                               ok
+                             })
+    cds_txscoords$reprentative_mostcommon <- as.character(seqnames(cds_txscoords)) %in% 
+      unlist(repres_freq)
+    cds_txscoords$reprentative_boundaries <- as.character(seqnames(cds_txscoords)) %in% 
+      unlist(repres_upstr)
+    cds_txscoords$reprentative_5len <- as.character(seqnames(cds_txscoords)) %in% 
+      unlist(repres_len5)
+    unq_stst <- start_stop_cc
+    mcols(unq_stst) <- NULL
+    unq_stst <- sort(unique(unq_stst))
+    ov <- findOverlaps(unq_stst, start_stop_cc, type = "equal")
+    ov <- split(subjectHits(ov), queryHits(ov))
+    unq_stst$type <- CharacterList(lapply(ov, FUN = function(x) {
+      unique(start_stop_cc$type[x])
+    }))
+    unq_stst$transcript_id <- CharacterList(lapply(ov, FUN = function(x) {
+      start_stop_cc$transcript_id[x]
+    }))
+    unq_stst$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      unique(start_stop_cc$gene_id[x])
+    }))
+    unq_stst$reprentative_mostcommon <- sum(!is.na(match(unq_stst$transcript_id, 
+                                                         unlist(as(repres_freq, "CharacterList"))))) > 0
+    unq_stst$reprentative_boundaries <- sum(!is.na(match(unq_stst$transcript_id, 
+                                                         unlist(as(repres_upstr, "CharacterList"))))) > 0
+    unq_stst$reprentative_5len <- sum(!is.na(match(unq_stst$transcript_id, 
+                                                   unlist(as(repres_len5, "CharacterList"))))) > 0
+    GTF_annotation <- list(transcripts_db, txs_gene, ifs, 
+                           unq_stst, cds_tx, intron_names_tx, cds_gen, exons_tx, 
+                           nsns, unq_intr, genes, threeutrs, fiveutrs, ncisof, 
+                           ncrnas, introns, intergenicRegions, trann, cds_txscoords, 
+                           translations, pkgnm, stop_inannot)
+    names(GTF_annotation) <- c("txs", "txs_gene", "seqinfo", 
+                               "start_stop_codons", "cds_txs", "introns_txs", "cds_genes", 
+                               "exons_txs", "exons_bins", "junctions", "genes", 
+                               "threeutrs", "fiveutrs", "ncIsof", "ncRNAs", "introns", 
+                               "intergenicRegions", "trann", "cds_txs_coords", 
+                               "genetic_codes", "genome_package", "stop_in_gtf")
+    txs_all <- unique(GTF_annotation$trann$transcript_id)
+    txs_exss <- unique(names(GTF_annotation$exons_txs))
+    txs_notok <- txs_all[!txs_all %in% txs_exss]
+    if (length(txs_notok) > 0) {
+      set.seed(666)
+      cat(paste("Warning: ", length(txs_notok), " txs with incorrect/unspecified exon boundaries - e.g. trans-splicing events, examples: ", 
+                paste(txs_notok[sample(1:length(txs_notok), 
+                                       size = min(3, length(txs_notok)), replace = F)], 
+                      collapse = ", "), " - ", date(), "\n", sep = ""))
+    }
+    save(GTF_annotation, file = paste(annotation_directory, 
+                                      "/", basename(gtf_file), "_Rannot", sep = ""))
+    cat(paste("Rannot object created!   ", date(), "\n", 
+              sep = ""))
+    if (export_bed_tables_TxDb == T) {
+      cat(paste("Exporting annotation tables ... ", date(), 
+                "\n", sep = ""))
+      for (bed_file in c("fiveutrs", "threeutrs", "ncIsof", 
+                         "ncRNAs", "introns", "cds_txs_coords")) {
+        bf <- GTF_annotation[[bed_file]]
+        bf_t <- bf
+        if (length(bf) > 0) {
+          bf_t <- data.frame(chromosome = seqnames(bf), 
+                             start = start(bf), end = end(bf), name = ".", 
+                             score = width(bf), strand = strand(bf))
+          meccole <- mcols(bf)
+          for (mecc in names(meccole)) {
+            if (is(meccole[, mecc], "CharacterList") | 
+                is(meccole[, mecc], "NumericList") | is(meccole[, 
+                                                                mecc], "IntegerList")) {
+              meccole[, mecc] <- paste(meccole[, mecc], 
+                                       collapse = ";")
+            }
+          }
+          bf_t <- cbind.data.frame(bf_t, meccole)
+        }
+        write.table(bf_t, file = paste(annotation_directory, 
+                                       "/", bed_file, "_similbed.bed", sep = ""), 
+                    sep = "\t", quote = FALSE, row.names = FALSE, 
+                    col.names = F)
+      }
+      write.table(GTF_annotation$trann, file = paste(annotation_directory, 
+                                                     "/table_gene_tx_IDs", sep = ""), sep = "\t", 
+                  quote = FALSE, row.names = FALSE)
+      seqi <- as.data.frame(GTF_annotation$seqinfo)
+      seqi$chromosome <- rownames(seqi)
+      write.table(seqi, file = paste(annotation_directory, 
+                                     "/seqinfo", sep = ""), sep = "\t", quote = FALSE, 
+                  row.names = FALSE)
+      gen_cod <- as.data.frame(GTF_annotation$genetic_codes)
+      gen_cod$chromosome <- rownames(gen_cod)
+      write.table(gen_cod, file = paste(annotation_directory, 
+                                        "/genetic_codes", sep = ""), sep = "\t", quote = FALSE, 
+                  row.names = FALSE)
+      cat(paste("Exporting annotation tables --- Done! ", 
+                date(), "\n", sep = ""))
+    }
+  }
+}
+
+### SET DIRECTORY 
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/") 
+
+### PREPARE ANNOTATION FILE 
+prepare_annotation_files(annotation_directory = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations",
+                         twobit_file = "Y:/Omics/Annotations_RNASeq/genome.2bit",
+                         gtf_file = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations/Araport11_GTF_genes_transposons.20241001.gtf",
+                         scientific_name = "Arabidopsis.thaliana",
+                         annotation_name = "Araport11")
+
+### RUN RIBOSEQC 
+### BUILD PATH TO BAM FILES 
+bamFiles <- dir(path = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/STAR_Output/",
+                pattern = ".*Coord.out.bam",
+                full.names = TRUE)
+
+RiboseQC_analysis(annotation_file = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations/Araport11_GTF_genes_transposons.20241001.gtf_Rannot",
+                  bam_files = bamFiles,
+                  write_tmp_files = FALSE,
+                  sample_names = gsub("\\.Aligned\\..*bam$","", bamFiles),
+                  extended_report = FALSE,
+                  stranded = FALSE)
+
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/STAR_Output/")
+create_html_report(input_files = list.files(pattern = "results", path = "."),
+                   input_sample_names = c("3wLR1","3wLR2", "2wSR1", "2wSR2", "8dLR1", "8dLR2", "8dSR1","8dSR2", "ER1", "ER2", "LmR1", "LmR2", "LpR1", "LpR2", "SmR1", "SmR2", "SpR1", "SpR2"),
+                   output_file = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/STAR_Output/report.html",
+                   extended = FALSE)
+
+
+#detach("package:RiboseQC", unload = TRUE)
+
+#detach("package:rmarkdown", unload = TRUE)
+#detach("package:knitr", unload = TRUE)
+#remove.packages("RiboseQC")
+#remove.packages("rmarkdown")
+#remove.packages("knitr")
+#install.packages("remotes")
+#remotes::install_version("knitr", version = "1.42")
+#remotes::install_version("rmarkdown", version = "2.19")
+
+#filter raw data based on sequence length 
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/filtered/")
+
+for (i in list.files(pattern = ".fastq.gz")) {
+  system(paste0("wsl zcat ", i, 
+                " | seqkit seq -m 20 -M 30 ", 
+                "-o Filtered_Output/", i))
+}
+
+# Description:
+# This R script identifies the 100 most abundant sequences from a set of BAM files,
+# counts their occurrences, and outputs the results in a table format. 
+# Additionally, it generates a heat map to visualize the relative abundance of these sequences 
+# across all samples.
+#
+# Instructions:
+# 1. Set the working directory to the folder containing the BAM files.
+# 2. Execute the script to obtain the output table and heat map.
+#
+# Inputs:
+# - BAM files located in the specified working directory.
+#
+# Outputs:
+# - A CSV file containing the counts of the 100 most abundant sequences.
+# - A heat map in PNG format showing the abundance of the top sequences across samples.
+#
+# Requirements:
+# - R version 4.0 or higher.
+#
+# Author: Maik Böhmer
+# Date: 16.11.2024
+
+
+# Load necessary libraries
+library(Rsamtools)
+library(dplyr)
+library(tidyr)
+library(GenomicFeatures)
+library(rtracklayer)
+library(txdbmaker)
+library(Biostrings)
+library(ggplot2)
+library(viridis)     # best. color. palette. evar.
+library(ggthemes)    # has a clean theme for ggplot2
+
+
+# set working directory
+setwd("~/RiboSeq_cotaminants")
+
+# Function to count sequences and map to genes in a BAM file
+count_sequences <- function(bam_file, gene_ranges) {
+  # Open the BAM file
+  bam <- scanBam(BamFile(bam_file))
+  
+  # Extract sequences and mapping positions
+  sequences <- as.character(bam[[1]]$seq)  # Convert DNAStringSet to character
+  chrom <- bam[[1]]$rname
+  start <- bam[[1]]$pos
+  end <- start + width(DNAStringSet(sequences)) - 1
+  
+  # Create a GRanges object for the sequences
+  sequences_gr <- GRanges(seqnames = chrom, ranges = IRanges(start = start, end = end), strand = "*")
+  
+  # Map sequences to genes
+  hits <- findOverlaps(sequences_gr, gene_ranges, ignore.strand = TRUE)
+  gene_ids <- as.character(mcols(gene_ranges)[subjectHits(hits), "gene_id"])
+  
+  # Create a tibble with sequences and gene IDs
+  sequence_counts_tbl <- tibble(Sequence = sequences[queryHits(hits)], Gene = gene_ids)
+  
+  # Count the appearances of each sequence
+  sequence_counts_tbl <- sequence_counts_tbl %>%
+    group_by(Sequence, Gene) %>%
+    summarise(Count = n(), .groups = "drop")
+  
+  return(sequence_counts_tbl)
+}
+
+# Path to the annotation file (e.g., GTF or GFF)
+annotation_file <- "Araport11_GTF_genes_transposons.20241001.gtf"
+
+# Create a TxDb object from the annotation file using txdbmaker
+txdb <- txdbmaker::makeTxDbFromGFF(annotation_file, format = "gtf")
+
+# Extract gene ranges
+gene_ranges <- genes(txdb)
+
+# Get list of BAM files in the current working directory
+bam_files <- list.files(pattern = "\\.bam$")
+
+# Initialize an empty list to store sequence counts from each file
+sequence_counts_list <- list()
+
+# Loop over each BAM file and get sequence counts
+for (bam_file in bam_files) {
+  sequence_counts <- count_sequences(bam_file, gene_ranges)
+  sequence_counts <- sequence_counts %>%
+    mutate(File = bam_file)
+  sequence_counts_list[[bam_file]] <- sequence_counts
+}
+
+# Combine sequence counts from all files into a single tibble
+combined_sequence_counts <- bind_rows(sequence_counts_list)
+
+# Get the top 100 most abundant sequences
+top_sequences <- combined_sequence_counts %>%
+  group_by(Sequence, Gene) %>%
+  summarise(TotalCount = sum(Count), .groups = "drop") %>%
+  arrange(desc(TotalCount)) %>%
+  slice_head(n = 100)
+
+# Create a comparison table
+comparison_table <- top_sequences %>%
+  left_join(combined_sequence_counts, by = c("Gene" , "Sequence")) %>%
+  ungroup() %>%
+  dplyr::select(Gene, Sequence, File, Count)
+
+test <- comparison_table[order(-comparison_table[,2], comparison_table[,1]), ]
+
+# Group by 'sequence' and summarize
+comparison_table <- comparison_table %>%
+  group_by(Sequence, File) %>%
+  summarize(
+    Gene = paste(unique(Gene), collapse = ", "),
+    Count = first(Count),  # Take the first count (assuming they are identical)
+    .groups = 'drop'
+  )
+
+# Pivot the table to a wider format for comparison
+comparison_table_wide <- comparison_table %>%
+  pivot_wider(names_from = File, values_from = Count, values_fill = list(Count = 0))
+
+# Print the comparison table
+print(comparison_table_wide)
+
+# Optionally, write the comparison table to a CSV file
+write.csv(comparison_table_wide, "comparison_table.csv", row.names = FALSE)
+
+# Create a heat map visualization by sequence
+heatmap_data <- comparison_table_wide %>%
+  gather(key = "File", value = "Count", -Sequence, -Gene)
+
+ggplot(heatmap_data, aes(x = File, y = Sequence, fill = Count)) +
+  geom_tile() +
+  facet_grid(Gene~.,scales="free_y", space="free_y") +
+  theme(strip.text.y.right = element_text(angle = 0),
+        axis.text=element_text(size=6)) +
+  scale_fill_viridis(name="Count") +
+  labs(title = "Read count distribution of top contaminants among samples", x = "Sample", y = "Fragment")
