@@ -161,6 +161,21 @@ for (i in 1:length(colnames(STAR.counts))) {
 #Write counts to file
 #write.csv(STAR.counts, "Y:/Omics/RiboSeq/PolysomeEnrichment/STAR_Output/STAR.counts.csv", quote = FALSE, row.names = TRUE, sep = "\t")
 
+#built histogram to visualize count distribution for all samples
+histo_counts <- as.vector(as.matrix(STAR.counts)) #combine counts from all samples into a single vector
+histo_counts <- histo_counts[!is.na(histo_counts) & histo_counts > 0] #remove NA or non-positive values 
+histo_counts_df <- data.frame(Count = histo_counts) #create data frame for ggplot
+
+#Plot histogram with log-transformed counts 
+ggplot(histo_counts_df, aes(x = log10(Count+1)))+ #add 1 to avoid log(0) issues
+  geom_histogram(binwidth = 0.1, fill = "#DB8872FF", color = "#A56457FF", alpha = 0.7)+
+  labs(title = "Histogram of Transcript Counts Across Samples",
+       x = "Log10(Counts + 1)",
+       y = "Frequency")+ 
+  theme_minimal()
+
+#Save plot to file
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/count_distribution.pdf", width = 12, height = 12, units = "cm")
 
 #Create STAR.counts subset that just contains transcripts with more than 2 or more counts per million reads 
 STAR.counts.subset <- STAR.counts[apply(STAR.counts.cpm >= 2, 1, all),]  
