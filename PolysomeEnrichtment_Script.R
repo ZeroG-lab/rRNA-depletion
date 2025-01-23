@@ -1,8 +1,9 @@
-#RNA-Seq Pipeline for total RNA and polysome enriched samples of NAA treated and control plants 
+#Bioinformatic Pipeline To Analyse MACE-Seq and Ribo-Seq Data ################################################
+#by Franziska Elisabeth Peter
 
+#PREPARATIONS_________________________________________________________________________________________________
 # INSTALL / LOAD LIBRARIES ###################################################################################
-
-# BiocManager::install("DESeq2")
+#BiocManager::install("DESeq2")
 # install.packages("devtools")
 # install.packages("BiocManager")
 # install.packages("ggplot2")
@@ -24,10 +25,9 @@
 # BiocManager::install("pcaExplorer")
 # BiocManager::install("Rsubread")
 # BiocManager::install("BiocParallel")
-
 #install.packages("MetBrewer")
 #install.packages("paletteer")
-install_github(repo = "lcalviell/Ribo-seQC")
+#install_github(repo = "lcalviell/Ribo-seQC")
 
 library("DESeq2")
 library("BiocManager")
@@ -55,23 +55,24 @@ library("plotly")
 library("VennDiagram") 
 library("paletteer")
 library("MetBrewer")
+library("gridExtra")
+library("grid")
+
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# RNA-Seq of polysome enriched and total RNA samples ##########################################################
+# Pipeline for MACE-Seq data analyses of polysome enriched and total RNA samples ##############################
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # PREPARE RAW DATA ############################################################################################
 
-#Concatenate files from different lanes into single file
-#Rename files to a uniform format if not already done (eg: Experiment_Sample_Treatment_Replicate_Mate -> NAA_90min_Ctrl_1_1.fastq.gz)
+#Rename files to a uniform and short format if not already done  
 #setwd("Y:/Omics/RiboSeq/PolysomeEnrichment/RawData/cleaned)
 #file.rename(dir(), gsub("-MACE_D.*Seq", "",dir()))
 #Only work with gzipped files for more efficient storage
 #Keep all files in a single folder
 
+# QUALITY CONTROL BY FASTQC ###################################################################################
 
-# QUALITY CONTROL _____________________________________________________________________________________________
-
-#Run FastQC on the read files
+#Run FastQC on the read files _________________________________________________________________________________
 setwd("Y:/Omics/RiboSeq/PolysomeEnrichment/RawData/cleaned/") #switch to directory containing the reads
 system(paste("wsl fastqc *.fastq.gz --outdir ../FastQC/")) #Run FastQC over all files and save results to specified folder
 
@@ -96,7 +97,7 @@ system(paste("wsl ~/STAR-2.7.11b/source/STAR",
              "--sjdbOverhang 64", # max read length - 1
              "--genomeSAindexNbases 12")) #length of SA pre-indexing string, scaled to Arabidopsis genome according to manual: min(14, log2(GenomeLength)/2 - 1)
 
-#Run STAR mapping in single-end mode 
+#Run STAR mapping in single-end mode __________________________________________________________________________ 
 setwd("Y:/Omics/RiboSeq/PolysomeEnrichment/RawData/cleaned/") #switch to directory containing the reads
 
 for (k in list.files(pattern = ".fastq.gz$")) { 
@@ -114,7 +115,7 @@ for (k in list.files(pattern = ".fastq.gz$")) {
 
 setwd("Y:/Omics/RiboSeq/PolysomeEnrichment") #switch back to original working directory
 
-#MultiQC #####################################################################################################
+#QUALITY CONTROL BY MULTIQC ####################################################################################
 
 #run MultiQC to get a summarised report
 #run in Ubuntu shell because it's not working with the system("wsl ...") command,  
@@ -158,6 +159,9 @@ for (i in 1:length(colnames(STAR.counts))) {
  
 }
 
+#Create STAR.counts subset that just contains transcripts with more than 2 or more counts per million reads 
+STAR.counts.subset <- STAR.counts[apply(STAR.counts.cpm >= 2, 1, all),]  
+
 #Write counts to file
 #write.csv(STAR.counts, "Y:/Omics/RiboSeq/PolysomeEnrichment/STAR_Output/STAR.counts.csv", quote = FALSE, row.names = TRUE, sep = "\t")
 
@@ -166,7 +170,7 @@ histo_counts <- as.vector(as.matrix(STAR.counts)) #combine counts from all sampl
 histo_counts <- histo_counts[!is.na(histo_counts) & histo_counts > 0] #remove NA or non-positive values 
 histo_counts_df <- data.frame(Count = histo_counts) #create data frame for ggplot
 
-#Plot histogram with log-transformed counts 
+#Plot histogram with log-transformed counts to check read distribution  
 ggplot(histo_counts_df, aes(x = log10(Count+1)))+ #add 1 to avoid log(0) issues
   geom_histogram(binwidth = 0.1, fill = "#DB8872FF", color = "#A56457FF", alpha = 0.7)+
   labs(title = "Histogram of Transcript Counts Across Samples",
@@ -177,10 +181,8 @@ ggplot(histo_counts_df, aes(x = log10(Count+1)))+ #add 1 to avoid log(0) issues
 #Save plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/count_distribution.pdf", width = 12, height = 12, units = "cm")
 
-#Create STAR.counts subset that just contains transcripts with more than 2 or more counts per million reads 
-STAR.counts.subset <- STAR.counts[apply(STAR.counts.cpm >= 2, 1, all),]  
-  
-# BUILD METADATA ______________________________________________________________________________________
+
+#BUILD METADATA #############################################################################################
 
 #Generate sample table containing experiment information 
 sample.table <- data.frame(sample = colnames(STAR.counts.subset))
@@ -233,7 +235,7 @@ pheatmap(sampleDistMatrix.overall,
 #Print out plot for reference
 #dev.print(pdf, "./Plots/distheatmap.pdf") 
 
-#Principal Component Analysis _____________________________________________________________________________
+#Principal Component Analysis #############################################################################
 
 #modify DESeq's plotPCA function to gain access to more PCs than just the first two
 plotPCA.ext <- function (object, intgroup = "treatment", ntop = 500, 
@@ -297,9 +299,9 @@ for (l in c(1:3)) {
   ggsave(filename = paste0("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/PCA_", l+(l-1), "+", l+l, ".pdf"), width = 12, height = 12, units = "cm")
 }
 
-# DIFFERENTIAL GENE EXPRESSION ####################################################################
+# DIFFERENTIAL GENE EXPRESSION ###########################################################################
 
-#Run DESeq2 on the dataset
+#Run DESeq2 on the whole dataset (without filtering for specific conditions)
 dds.overall <- DESeq(dds.overall)
 
 #Normalize counts
@@ -338,7 +340,7 @@ genes.sig.meta$ID <- rownames(genes.sig.meta)
 Gene.Metadata <- read.table("Y:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
 genes.sig.meta <- merge(genes.sig.meta, Gene.Metadata, all.x = TRUE, all.y = FALSE)
 
-#Build plot of Auxin-induced gene families
+#Build plot of Auxin-induced gene families _________________________________________________________________
 genes.sig.auxin <- data.frame("Family" = factor(rep(c("SAUR", "Aux/IAA", "GH3", "ARF"), each = 4), levels = c("SAUR", "Aux/IAA", "GH3", "ARF")),
                               "Number" = c(
                                 length(which(rowSums(STAR.counts[Gene.Metadata$ID[grep("SAUR", Gene.Metadata$Symbol)],]) < 17)),
@@ -358,7 +360,7 @@ genes.sig.auxin <- data.frame("Family" = factor(rep(c("SAUR", "Aux/IAA", "GH3", 
                                 length(grep("^ARF[0-9]| ARF[0-9]", subset(genes.sig.meta, log2FoldChange > 0)$Symbol, value = TRUE)),
                                 length(grep("^ARF[0-9]| ARF[0-9]", subset(genes.sig.meta, log2FoldChange < 0)$Symbol, value = TRUE))
                               ),
-                              "Regulation" = factor(rep(c("Unexpressed", "None", "Up", "Down"), 4), levels = c("Unexpressed", "None", "Up", "Down"))
+                              "Regulation" = factor(rep(c("absent", "n.s.", "up", "down"), 4), levels = c("absent", "n.s.", "up", "down"))
 )
 
 
@@ -374,7 +376,7 @@ ggplot(genes.sig.auxin, aes(Family, Number, fill = Regulation))+
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/NAA/AuxGenes.pdf", width = 12, height = 12, units = "cm")
 
 
-#Build Volcano plots
+#Build Volcano plots ___________________________________________________________________________________________
 
 #Define plot colors
 derain_colors <- met.brewer("Derain", n = 7)
@@ -422,7 +424,7 @@ ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/NAA/Volcan
 #dev.print(pdf, "Y:/Omics/RiboSeq/PolysomeEnrichment/Plots/NAA/NAA_MAplot.pdf")
 
 
-# DIFFERENTIAL GENE EXPRESSION WITH INTERACTION FUNCTION ####################################################################
+# DIFFERENTIAL GENE EXPRESSION INCLUDING INTERACTION FUNCTION ####################################################################
 
 dds.interaction <- DESeqDataSetFromMatrix(STAR.counts.subset,
                                       colData = sample.table,
@@ -442,7 +444,7 @@ dds.interaction <- estimateSizeFactors(dds.interaction)
 
 #Extract results with applied filters for p-value and log2 foldchange threshold
 #Set p-value (set the variable here, so the results function and any manual filtering later rely on the same value)
-p.val <- 0.9
+p.val <- 0.99
 fc.limit <- 0
 
 #write out possible results to choose what should be compared with eachother
@@ -460,51 +462,45 @@ res_interaction_df <- data.frame(res_interaction)
 write.csv(res_interaction_df, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Foldchanges_interaction.csv", quote = FALSE)
 
 #Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
-genes.sig_interaction <- subset(res_interaction_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
+genes.insig_interaction <- subset(res_interaction_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
 write.csv(genes.sig_interaction, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Foldchanges_sig_interaction.csv", quote = FALSE)
 write.table(genes.sig_interaction, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Counts/FoldChanges/Significantly_regulated_genes_interaction.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
 
 #Add Metadata to significantly regulated genes and write out
-genes.sig.meta_interaction <- genes.sig_interaction
-genes.sig.meta_interaction$ID <- rownames(genes.sig.meta_interaction)
+genes.insig.meta_interaction <- genes.insig_interaction
+genes.insig.meta_interaction$ID <- rownames(genes.insig.meta_interaction)
 Gene.Metadata <- read.table("Y:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
-genes.sig.meta_interaction <- merge(genes.sig.meta_interaction, Gene.Metadata, all.x = TRUE, all.y = FALSE)
+genes.insig.meta_interaction <- merge(genes.insig.meta_interaction, Gene.Metadata, all.x = TRUE, all.y = FALSE)
 
-#Build Volcano plots
+#Select columns of interest and build new table
+genes.insig.meta_grouped <- genes.insig.meta_interaction[, c(1,3,7,9,13)]
 
-#Define plot colors
-#derain_colors <- met.brewer("Derain", n = 7)
-#col_down <- derain_colors[4]
-#col_up <- derain_colors[6]
-#col_neutral <- "grey80"
+# Round the relevant columns to two decimal places
+genes.insig.meta_grouped$log2FoldChange <- round(genes.insig.meta_grouped$log2FoldChange, 2)
+genes.insig.meta_grouped$padj <- round(genes.insig.meta_grouped$padj, 3)
 
-#Select data to plot
-#plotdata_interaction <- res_interaction_df
+# Define row colors with transparency 
+row_colors_interaction_table <- c(adjustcolor("#A56457FF", alpha.f = 0.8))
 
-#Modify dataframe for plotting by adding coloring information
-#plotdata_interaction$ID <- row.names(plotdata_interaction)
-#plotdata_interaction$Regulation <- "insignificant"  # Initialize all as neutral
-#plotdata_interaction$Regulation[plotdata_interaction$log2FoldChange >= fc.limit & plotdata_interaction$padj <= p.val] <- "up"  
-#plotdata_interaction$Regulation[plotdata_interaction$log2FoldChange <= -fc.limit & plotdata_interaction$padj <= p.val] <- "down"  
+# Repeat the colors for the number of rows needed
+row_colors_interaction_table <- rep(row_colors_interaction_table, each = 4)
 
+# Create a table grob with background colors for rows
+table_grob_interaction <- tableGrob(
+  genes.insig.meta_grouped,
+  theme = ttheme_default(
+    core = list(
+      bg_params = list(fill = row_colors),  # Set background colors
+      fg_params = list(col = "black")  # Text color
+    )
+  )
+)
 
-#Plotting volcano plot
-#ggplot(plotdata_interaction, aes(log2FoldChange, -log10(padj), label = ID, color = Regulation))+
-  geom_point_rast(size = 1)+
-  scale_x_continuous(limits = c(-6,6), breaks = seq(-6,6,2))+
-  #scale_y_continuous(limits = c(0,25), breaks = seq(0,25,5))+
-  scale_color_manual(values = c("down" = col_down, "up" = col_up, "insignificant" = col_neutral))+
-  geom_hline(yintercept = -log10(p.val), linetype = 2)+
-  geom_vline(xintercept = c(-fc.limit,fc.limit), linetype = 2)+
-  #ggtitle("20 µM NAA for 90 min")+
-  xlab("Log2 Foldchange")+
-  ylab("-Log10 adjusted p-value")+
-  annotate("text", x = -4, y = 23, label = length(subset(plotdata_interaction, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
-  annotate("text", x = 4, y = 23, label = length(subset(plotdata_interaction, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
-  theme_light(base_size = 9)+
-  theme(axis.text = element_text(color = "black"))
-#Save volcano plot to file
-#ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/NAA/Volcano_interaction.pdf", width = 12, height = 12, units = "cm")
+#Safe table as PDF file
+pdf("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Genes.insig.interaction_grouped.pdf", width = 20, height = 20)
+grid.draw(table_grob_interaction)
+dev.off()
+
 
 #Plot normalized counts for specific genes depending on treatment or control conditions 
 #Highest up-regulated transcript under both conditions   
@@ -755,7 +751,7 @@ sample.table_Total_RNA$condition <- rep(c("Total_RNA"), each = 8)
 sample.table_Total_RNA$replicate <- gsub("^.*_Ctrl_", "", sample.table_Total_RNA$sample)
 sample.table_Total_RNA$replicate <- gsub("^.*_NAA_", "", sample.table_Total_RNA$replicate)
 
-#Generate subset of the STAR.counts table containing just informations about control samples
+#Generate subset of the STAR.counts table containing just informations about total RNA samples
 STAR.counts_Total_RNA_tmp <- grep("Total_RNA", colnames(STAR.counts.subset), value = TRUE)
 STAR.counts_Total_RNA <- STAR.counts.subset[, STAR.counts_Total_RNA_tmp]
 
@@ -807,7 +803,7 @@ write.table(genes.sig_Total_RNA, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeE
 #Add Metadata to significantly regulated genes and write out
 genes.sig.meta_Total_RNA <- genes.sig_Total_RNA
 genes.sig.meta_Total_RNA$ID <- rownames(genes.sig.meta_Total_RNA)
-Gene.Metadata <- read.table("Y:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
+Gene.Metadata <- read.table("Z:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
 genes.sig.meta_Total <- merge(genes.sig.meta_Total_RNA, Gene.Metadata, all.x = TRUE, all.y = FALSE)
 
 
@@ -845,7 +841,7 @@ ggplot(plotdata_Total_RNA, aes(log2FoldChange, -log10(padj), label = ID, color =
   theme(axis.text = element_text(color = "black"))
 
 #Save volcano plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Volcano_Total_RNA.pdf", width = 12, height = 12, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Volcano_Total_RNA.pdf", width = 15, height = 12, units = "cm")
 
 
 # BUILD METADATA FOR POLYSOME ENRICHED SAMPLES ______________________________________________________________________________________
@@ -942,29 +938,13 @@ ggplot(plotdata_Polysome_Fractions, aes(log2FoldChange, -log10(padj), label = ID
   ggtitle("DTG in Polysome-enriched samples under NAA vs Ctrl conditions")+
   xlab("Log2 Foldchange")+
   ylab("-Log10 adjusted p-value")+
-  annotate("text", x = -4, y = 115, label = length(subset(plotdata_Polysome_Fractions, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
-  annotate("text", x = 4, y = 115, label = length(subset(plotdata_Polysome_Fractions, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
+  annotate("text", x = -4, y = 132, label = length(subset(plotdata_Polysome_Fractions, padj <= p.val & log2FoldChange <= -fc.limit)$ID), size = 8, color = col_down)+
+  annotate("text", x = 4, y = 132, label = length(subset(plotdata_Polysome_Fractions, padj <= p.val & log2FoldChange >= fc.limit)$ID), size = 8, color = col_up)+
   theme_light(base_size = 9)+
   theme(axis.text = element_text(color = "black"))
 
 #Save volcano plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Volcano_Polysome_Fractions.pdf", width = 12, height = 12, units = "cm")
-
-
-#Plot log2FoldChanges from Polysome enriched samples against Total_RNA samples in a scatterplot ________________________________________________________________________
-
-#Create new column in genes.sig data.frame called "ID" and contains rownames of previous data.frame
-genes.sig_Total_RNA$ID <- rownames(genes.sig_Total_RNA)
-genes.sig_Polysome_Fractions$ID <- rownames(genes.sig_Polysome_Fractions)
-#merge the two data.frames on that common "ID" column
-log2foldchanges_combined <- merge(genes.sig_Total_RNA, genes.sig_Polysome_Fractions, by = "ID")
-#Plot data in a scatterplot 
-ggplot(data = log2foldchanges_combined, aes(x = log2foldchanges_combined$log2FoldChange.x, y = log2foldchanges_combined$log2FoldChange.y))+
-  geom_point()+
-  labs(titel = "Scatterplot of log2FoldChanges from Polysome enriched and Total_RNA samples", x ="Log2FoldChanges Total_RNA samples", y = "Log2FoldChanges Polysome enriched samples")+
-  theme_minimal()
-#Save volcano plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Scatterplot_Total_RNA_vs_Polysomes_sigDEGs.pdf", width = 12, height = 12, units = "cm")
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Volcano_Polysome_Fractions.pdf", width = 15, height = 12, units = "cm")
 
 #Plot log2FoldChanges from Polysome enriched samples against Total_RNA samples in a scatterplot but for all genes, not just significant DEGs 
 unfiltered_res_Total_RNA <- res_Total_RNA_df
@@ -1009,9 +989,7 @@ ggplot(data = combined_df, aes(x = combined_df$log2FoldChange.x, y = combined_df
 #Save volcano plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/Scatterplot_Total_RNA_vs_Polysomes_unfiltered_interaction.pdf", width = 15, height = 15, units = "cm")
 
-library(gridExtra)
-library(grid)
-
+#Build table with significant top 10 transcripts for total RNA samples, polysome fractions and in both
 #merging and filtering data frame
 genes.sig.meta_Polysome_Fractions <- merge(genes.sig.meta_Polysome_Fractions, Gene.Metadata, all.x = TRUE, all.y = FALSE)
 combined_df_meta <- merge(combined_df, Gene.Metadata, all.x = TRUE, all.y = FALSE)
@@ -1076,7 +1054,7 @@ pdf("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Genes.sig.grouped.p
 grid.draw(table_grob)
 dev.off()
 
-#Building Venn diagrams comparing NAA treatment vs Ctrl in Total_RNA and Polysome enriched samples 
+#Building Venn diagrams comparing NAA treatment vs Ctrl in Total_RNA and Polysome enriched samples _____________________________________________________________ 
 
 #Create subsets of results table after DESeq for up- or downregulated genes 
 Venn.Total_RNA.up <- rownames(subset(res_Total_RNA_df, res_Total_RNA_df$log2FoldChange >= fc.limit & res_Total_RNA_df$padj <= p.val))
@@ -1122,9 +1100,6 @@ prep.geneList <- function(x, fc.limit = 1, padj = 0.05) {
   return(list.tmp)
 }
 
-#Prepare gene list on the fly with the custom function above - structure example 
-#geneList <- prep.geneList(res_X_df)
-
 #Prepare gene list for data set: Polysomes NAA vs. Ctrl ______________________________________________________________________________________ 
 geneList_P <- prep.geneList(res_Polysome_Fractions_df) 
 
@@ -1145,9 +1120,9 @@ gse_P_all <- gseGO(geneList=geneList_P,
 gse_P_all_simp <- simplify(gse_P_all)
 
 #Plot data for Polysome fractions (NAA vs. Ctrl) in a Splitplots _________________________________________________________________________________
-dotplot(gse_P_all_simp, showCategory=12, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 9) + scale_fill_gradientn(colors = Morgenstern)
+dotplot(gse_P_all_simp, showCategory=12, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 9) + scale_fill_gradientn(colors = Morgenstern)+ ggtitle("GO Enrichment Analysis of Polysome-Enriched Samples")
 #Save plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/PolysomeFractions/simpSplitplotGOall_Polysome_Fractions_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
+ggsave("Z:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/PolysomeFractions/finsimpSplitplotGOall_Polysome_Fractions_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
 
 gse_P_BP <- gseGO(geneList=geneList_P, 
                    ont ="BP", 
@@ -1198,15 +1173,16 @@ dotplot(gse_P_CC, showCategory=12, split=".sign") + facet_grid(.~.sign) + theme_
 #Save plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/PolysomeFractions/SplitplotGOCC_Polysome_Fractions_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
 
-#Plot data in category network plot 
+#Plot data for Polysome fractions (NAA vs. Ctrl) in category network plot ____________________________________________ 
+Morgenstern <- met.brewer("Morgenstern", 8)
 cnetplot(gse_P_all, 
          categorySize="pvalue",
-         color.params = list(foldChange=geneList_T),
+         color.params = list(foldChange=geneList_T, colorPalette = Morgenstern),
          cex.params = list(gene_label = 0.6, category_label = 0.8),
          showCategorie = 10)+
   theme_light(base_size = 8)+
   scale_color_gradientn(colors = Morgenstern, name = "log2FoldChange")+
-  labs(x = NULL, y = NULL)+
+  labs(x = NULL, y = NULL, title = "Category Network of Enriched GO Terms in Polysome-Enriched Samples")+
   theme(legend.position = "right", axis.text = element_text(color = "black")) 
 #Save plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/PolysomeFractions/cnetGOall_Polysomes_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
@@ -1250,14 +1226,14 @@ cnetplot(gse_P_CC,
 #Save plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/PolysomeFractions/cnetGOCC_Polysomes_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
 
-#Plot data in Ridgeplot
-ridgeplot(gse_P_all)+
-  labs(x = "Enrichment Distribution")+
+#Plot data for Polysome fractions (NAA vs. Ctrl) in Ridgeplot ____________________________________________________
+ridgeplot(gse_P_all_simp)+
+  labs(x = "Enrichment Distribution", title = "Distribution of GO Terms in Polysome-Enriched Samples")+
   theme_light(base_size = 9)+
   scale_fill_gradientn(colors = Morgenstern)+ 
   theme(legend.position = "right", axis.text = element_text(color = "black"))
 #Save plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/PolysomeFractions/RidgeplotGOall_Polysomes_NAA_vs_Ctrl.pdf", width = 15, height = 17, units = "cm")
+ggsave("Z:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/PolysomeFractions/finsimpRidgeplotGOall_Polysomes_NAA_vs_Ctrl.pdf", width = 15, height = 17, units = "cm")
 
 #Plot data 
 ridgeplot(gse_P_BP)+
@@ -1287,7 +1263,7 @@ ridgeplot(gse_P_CC)+
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/PolysomeFractions/RidgeplotGOCC_Polysomes_NAA_vs_Ctrl.pdf", width = 10, height = 10, units = "cm")
 
 
-#Prepare gene list for data set: Total_RNA NAA vs. Ctrl 
+#Prepare gene list for data set: Total_RNA (NAA vs. Ctrl) 
 geneList_T <- prep.geneList(res_Total_RNA_df) 
 
 gse_T_all <- gseGO(geneList=geneList_T, 
@@ -1303,10 +1279,10 @@ gse_T_all <- gseGO(geneList=geneList_T,
 
 gse_T_all_simp <- simplify(gse_T_all)
 
-#Plot data for Total_RNA samples (comparison NAA vs. Ctrl) in a Splitplot
-dotplot(gse_T_all_simp, showCategory=10, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 8) + scale_fill_gradientn(colors = Morgenstern)
+#Plot data for Total_RNA samples (NAA vs. Ctrl) in a Splitplot _______________________________________________
+dotplot(gse_T_all_simp, showCategory=12, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 9) + scale_fill_gradientn(colors = Morgenstern)+ ggtitle("GO Enrichment Analysis of Total RNA Samples")
 #Save plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/simpSplitplotGOall_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
+ggsave("Z:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/finsimpSplitplotGOall_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
 
 gse_T_BP <- gseGO(geneList=geneList_T, 
                    ont ="BP", 
@@ -1358,7 +1334,7 @@ dotplot(gse_T_CC, showCategory=10, split=".sign") + facet_grid(.~.sign) + theme_
 #Save plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/SplitplotGOCC_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
 
-#Plot data for Total_RNA samples (comparison NAA vs. Ctrl) in a category network 
+#Plot data for Total_RNA samples (NAA vs. Ctrl) in a category network _______________________________________ 
 Morgenstern <- met.brewer("Morgenstern")
 
 cnetplot(gse_T_all, 
@@ -1368,7 +1344,7 @@ cnetplot(gse_T_all,
          showCategorie = 10)+
   theme_light(base_size = 8)+
   scale_color_gradientn(colors = Morgenstern, name = "log2FoldChange")+
-  labs(x = NULL, y = NULL)+
+  labs(x = NULL, y = NULL, title = "Category Network of Enriched GO Terms in Total RNA Samples" )+
   theme(legend.position = "right", axis.text = element_text(color = "black")) 
 #Save plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/cnetGOall_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
@@ -1412,14 +1388,14 @@ cnetplot(gse_T_CC,
 #Save plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/cnetGOCC_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 15, units = "cm")
 
-#Plot data in Ridgeplot
+#Plot data for Total_RNA samples (NAA vs. Ctrl) in Ridgeplot _____________________________________________________
 ridgeplot(gse_T_all_simp)+
-  labs(x = "Enrichment Distribution")+
+  labs(x = "Enrichment Distribution", title = "Distribution of GO Terms in Total RNA Samples")+
   theme_light(base_size = 9)+
   scale_fill_gradientn(colors = Morgenstern)+ 
   theme(legend.position = "right", axis.text = element_text(color = "black"))
 #Save plot to file
-ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/simpRidgeplotGOall_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 20, units = "cm")
+ggsave("Z:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/Total_RNASamples/1finsimpRidgeplotGOall_Total_RNA_NAA_vs_Ctrl.pdf", width = 15, height = 17, units = "cm")
 
 #Plot data 
 ridgeplot(gse_T_BP_simp)+
@@ -1464,7 +1440,7 @@ gse_Ctrl_all <- gseGO(geneList=geneList_Ctrls,
 
 gse_Ctrl_all_simp <- simplify(gse_Ctrl_all)
 
-#Plot data for Ctrl samples in a Splitplot
+#Plot data for Ctrl samples in a Splitplot __________________________________________________
 dotplot(gse_Ctrl_all_simp, showCategory=10, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 8) + scale_fill_gradientn(colors = Morgenstern)
 #Save plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSamples/simpSplitplotGOall_Ctrls.pdf", width = 15, height = 15, units = "cm")
@@ -1516,7 +1492,7 @@ gse_Ctrl_CC <- gseGO(geneList=geneList_Ctrls,
                       OrgDb = org.At.tair.db, 
                       pAdjustMethod = "none")
 
-#Plot data for Ctrl samples in a Splitplot
+#Plot data for Ctrl samples in a Splitplot ______________________________________________________
 dotplot(gse_Ctrl_CC, showCategory=10, split=".sign") + facet_grid(.~.sign) + theme_light(base_size = 8) + scale_fill_gradientn(colors = Morgenstern)
 #Save plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSamples/SplitplotGOCC_Ctrls.pdf", width = 15, height = 15, units = "cm")
@@ -1567,7 +1543,7 @@ cnetplot(gse_Ctrl_CC,
 #Save plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSamples/cnetGOCC_Ctrls.pdf", width = 15, height = 15, units = "cm")
 
-#Plot data in Ridgeplot
+#Plot data for Ctrl samples in Ridgeplot ____________________________________________________
 ridgeplot(gse_Ctrl_all)+
   labs(x = "Enrichment Distribution")+
   theme_light(base_size = 9)+
@@ -1603,19 +1579,6 @@ ridgeplot(gse_Ctrl_CC)+
 #Save plot to file
 ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Plots/GO/CtrlSamples/RidgeplotGOCC_Ctrls.pdf", width = 15, height = 30, units = "cm")
 
-#Build table with significant top 10 transcripts for total RNA samples, polysome fractions and in both 
-sorted_genes.sig.meta_Polysome_Fractions <- genes.sig.meta_Polysome_Fractions[order(-genes.sig.meta_Polysome_Fractions$log2FoldChange), ] 
-sorted_genes.sig.meta_Polysome_Fractions <- head(sorted_genes.sig.meta_Polysome_Fractions, 10)
-table <- sorted_genes.sig.meta_Polysome_Fractions[, c(1,3,7,9)]
-
-sorted_genes.sig.meta_Total_RNA <- genes.sig.meta_Total[order(-genes.sig.meta_Total$log2FoldChange), ]
-sorted_genes.sig.meta_Total_RNA <- head(sorted_genes.sig.meta_Total_RNA, 10)
-table <- rbind(table, sorted_genes.sig.meta_Total_RNA[, c(1,3,7,9)])  
-
-common_genes <- intersect(genes.sig.meta_Polysome_Fractions$ID, genes.sig.meta_Total$ID)
-common_df <- genes.sig.meta_Polysome_Fractions[genes.sig.meta_Polysome_Fractions$ID %in% common_genes, ]
-
-exclusive.sig.genes.meta_Polysome_Fractions <- genes.sig.meta_Polysome_Fractions[!(genes.sig.meta_Polysome_Fractions$ID %in% genes.sig.meta_Total$ID)]
 
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Ribo-Seq analyses to compare occurence of rRNA fragments under different growth conditions  #################
@@ -1623,14 +1586,13 @@ exclusive.sig.genes.meta_Polysome_Fractions <- genes.sig.meta_Polysome_Fractions
 
 # PREPARE RAW DATA ############################################################################################
 
-#Concatenate files from different lanes into single file
-#Rename files to a uniform format if not already done 
+#Rename files to a uniform and short format if not already done 
 #setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/cleaned") 
 #file.rename(dir(), gsub("-SMALLRNA.*Seq", "",dir()))
 #Only work with gzipped files for more efficient storage
 #Keep all files in a single folder
 
-# QUALITY CONTROL _____________________________________________________________________________________________
+# QUALITY CONTROL USING FASTQC ################################################################################
 
 #Run FastQC on the read files
 setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/cleaned/") #switch to directory containing the reads
@@ -1647,7 +1609,7 @@ GTFfile <- "/mnt/y/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations/Araport11_GT
 
 # STAR MAPPING ################################################################################################
 
-#Generate Reference Genome 
+#Generate Reference Genome _______________________________________________________________________________________ 
 system(paste("wsl ~/STAR-2.7.11b/source/STAR",
              "--runThreadN 30", #number of threads to use for computation
              "--runMode genomeGenerate", #run mode to generate index
@@ -1657,7 +1619,7 @@ system(paste("wsl ~/STAR-2.7.11b/source/STAR",
              "--sjdbOverhang 63", # max read length - 1
              "--genomeSAindexNbases 12")) #length of SA pre-indexing string, scaled to Arabidopsis genome according to manual: min(14, log2(GenomeLength)/2 - 1)
 
-#Run STAR mapping in single-end mode 
+#Run STAR mapping in single-end mode _____________________________________________________________________________
 setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/cleaned/") #switch to directory containing the reads
 
 for (k in list.files(pattern = ".fastq.gz$")) { 
@@ -1682,17 +1644,16 @@ for (k in list.files(pattern = ".fastq.gz$")) {
   print("Done")
 }
 
-
 setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA") #switch back to original working directory
 
-#MultiQC #####################################################################################################
+#QUALITY CONTROL USING MultiQC ######################################################################################
 
 #run MultiQC to get a summarised report
 #run in Ubuntu shell because it's not working with the system("wsl ...") command,  
 # cd /mnt/y/Omics/RiboSeq/Growth_Conditions_rRNA/ #set working directory
 # multiqc . -o MultiQC/ #performing MultiQC analysis with data from working directory, MultiQC report will be saved in the defined output directory 
 
-# STAR DATA IMPORT ###########################################################################################
+# STAR DATA IMPORT ##################################################################################################
 
 #Set working directory of data to be analyzed
 setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/")
@@ -1719,7 +1680,601 @@ for (i in list.files("./STAR_Output/", pattern = "ReadsPerGene", full.names = TR
   rm(temp,i)
 }
 
-## RIBOSEQC ____________________________________________________________________
+## QUALITY CONTROL USING RIBOSEQC #################################################################################
+
+### If not already done, get twobit programs and place them in F:\Annotations_RNASeq
+### Download faToTwoBit program from: http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/faToTwoBit
+### Download twoBitInfo program from: http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/twoBitInfo
+### Tutorial: https://genome.ucsc.edu/goldenpath/help/twoBit.html
+
+### PREPARE TWOBIT FILE 
+system("wsl /mnt/y/Omics/Annotations_RNASeq/faToTwoBit /mnt/y/Omics/Annotations_RNASeq/TAIR10_chr_all.fas /mnt/y/Omics/Annotations_RNASeq/genome.2bit")
+### CHECK TWOBIT FILE INTEGRITY 
+system("wsl /mnt/y/Omics/Annotations_RNASeq/twoBitInfo /mnt/y/Omics/Annotations_RNASeq/genome.2bit stdout | sort -k2rn")
+
+### MODIFY PREPARE_ANNOTATION_FILES FUNCTION TO PROPERLY EXTRACT EXON INFORMATION __________________________________ 
+prepare_annotation_files <- function (annotation_directory, twobit_file, gtf_file, scientific_name = "Homo.sapiens", 
+                                      annotation_name = "genc25", export_bed_tables_TxDb = T, 
+                                      forge_BSgenome = T, create_TxDb = T) 
+{
+  DEFAULT_CIRC_SEQS <- unique(c("chrM", "MT", "MtDNA", "mit", 
+                                "Mito", "mitochondrion", "dmel_mitochondrion_genome", 
+                                "Pltd", "ChrC", "Pt", "chloroplast", "Chloro", "2micron", 
+                                "2-micron", "2uM", "Mt", "NC_001879.2", "NC_006581.1", 
+                                "ChrM", "mitochondrion_genome"))
+  annotation_name <- gsub(annotation_name, pattern = "_", 
+                          replacement = "")
+  annotation_name <- gsub(annotation_name, pattern = "-", 
+                          replacement = "")
+  if (!dir.exists(annotation_directory)) {
+    dir.create(path = annotation_directory, recursive = T)
+  }
+  annotation_directory <- normalizePath(annotation_directory)
+  twobit_file <- normalizePath(twobit_file)
+  gtf_file <- normalizePath(gtf_file)
+  for (f in c(twobit_file, gtf_file)) {
+    if (file.access(f, 0) == -1) {
+      stop("\n                 The following files don't exist:\n", 
+           f, "\n")
+    }
+  }
+  scientific_name_spl <- strsplit(scientific_name, "[.]")[[1]]
+  ok <- length(scientific_name_spl) == 2
+  if (!ok) {
+    stop("\"scientific_name\" must be two words separated by a \".\", like \"Homo.sapiens\"")
+  }
+  seqinfotwob <- seqinfo(TwoBitFile(twobit_file))
+  circss <- seqnames(seqinfotwob)[which(seqnames(seqinfotwob) %in% 
+                                          DEFAULT_CIRC_SEQS)]
+  seqinfotwob@is_circular[which(seqnames(seqinfotwob) %in% 
+                                  DEFAULT_CIRC_SEQS)] <- TRUE
+  pkgnm <- paste("BSgenome", scientific_name, annotation_name, 
+                 sep = ".")
+  circseed <- circss
+  if (length(circseed) == 0) {
+    circseed <- NULL
+  }
+  if (forge_BSgenome) {
+    cat(paste("Creating the BSgenome package ... ", date(), 
+              "\n", sep = ""))
+    seed_text <- paste("Package: BSgenome.", scientific_name, 
+                       ".", annotation_name, "\n", "Title: Full genome sequences for ", 
+                       scientific_name, ", ", annotation_name, "\n", "Description: Full genome sequences for ", 
+                       scientific_name, ", ", annotation_name, "\n", "Version: 1.0", 
+                       "\n", "organism: ", scientific_name, "\n", "common_name: ", 
+                       scientific_name, "\n", "provider: NA", "\n", "provider_version: ", 
+                       annotation_name, "\n", "release_date: NA", "\n", 
+                       "release_name: NA", "\n", "source_url: NA", "\n", 
+                       "organism_biocview: ", scientific_name, "\n", "BSgenomeObjname: ", 
+                       scientific_name, "\n", "seqs_srcdir: ", dirname(twobit_file), 
+                       "\n", "seqfile_name: ", basename(twobit_file), sep = "")
+    seed_dest <- paste(annotation_directory, "/", basename(twobit_file), 
+                       "_", scientific_name, "_seed", sep = "")
+    if (length(circseed) == 0) {
+      writeLines(text = seed_text, con = seed_dest)
+    }
+    if (length(circseed) == 1) {
+      seed_text <- paste(seed_text, "\n", "circ_seqs: \"", 
+                         circseed, "\"", sep = "")
+      writeLines(text = seed_text, con = seed_dest)
+    }
+    if (length(circseed) > 1) {
+      circseed <- paste("c(\"", paste(circseed, collapse = ","), 
+                        "\")", sep = "")
+      circseed <- gsub(circseed, pattern = ",", replacement = "\",\"")
+      cat(seed_text, "\n", "circ_seqs: ", circseed, "\n", 
+          sep = "", file = seed_dest)
+    }
+    unlink(paste(annotation_directory, pkgnm, sep = "/"), 
+           recursive = T)
+    forgeBSgenomeDataPkg(x = seed_dest, destdir = annotation_directory, 
+                         seqs_srcdir = dirname(twobit_file))
+    cat(paste("Creating the BSgenome package --- Done! ", 
+              date(), "\n", sep = ""))
+    cat(paste("Installing the BSgenome package ... ", date(), 
+              "\n", sep = ""))
+    install(paste(annotation_directory, pkgnm, sep = "/"), 
+            upgrade = F)
+    cat(paste("Installing the BSgenome package --- Done! ", 
+              date(), "\n", sep = ""))
+  }
+  if (create_TxDb) {
+    cat(paste("Creating the TxDb object ... ", date(), "\n", 
+              sep = ""))
+    annotation <- makeTxDbFromGFF(file = gtf_file, format = "gtf", 
+                                  chrominfo = seqinfotwob)
+    saveDb(annotation, file = paste(annotation_directory, 
+                                    "/", basename(gtf_file), "_TxDb", sep = ""))
+    cat(paste("Creating the TxDb object --- Done! ", date(), 
+              "\n", sep = ""))
+    cat(paste("Extracting genomic regions ... ", date(), 
+              "\n", sep = ""))
+    genes <- genes(annotation)
+    exons_ge <- exonsBy(annotation, by = "gene")
+    exons_ge <- reduce(exons_ge)
+    cds_gen <- cdsBy(annotation, "gene")
+    cds_ge <- reduce(cds_gen)
+    threeutrs <- reduce(GenomicRanges::setdiff(unlist(threeUTRsByTranscript(annotation)), 
+                                               unlist(cds_ge), ignore.strand = FALSE))
+    fiveutrs <- reduce(GenomicRanges::setdiff(unlist(fiveUTRsByTranscript(annotation)), 
+                                              unlist(cds_ge), ignore.strand = FALSE))
+    introns <- reduce(GenomicRanges::setdiff(unlist(intronsByTranscript(annotation)), 
+                                             unlist(exons_ge), ignore.strand = FALSE))
+    nc_exons <- reduce(GenomicRanges::setdiff(unlist(exons_ge), 
+                                              reduce(c(unlist(cds_ge), fiveutrs, threeutrs)), 
+                                              ignore.strand = FALSE))
+    ov <- findOverlaps(threeutrs, genes)
+    ov <- split(subjectHits(ov), queryHits(ov))
+    threeutrs$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      names(genes)[x]
+    }))
+    ov <- findOverlaps(fiveutrs, genes)
+    ov <- split(subjectHits(ov), queryHits(ov))
+    fiveutrs$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      names(genes)[x]
+    }))
+    ov <- findOverlaps(introns, genes)
+    ov <- split(subjectHits(ov), queryHits(ov))
+    introns$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      names(genes)[x]
+    }))
+    ov <- findOverlaps(nc_exons, genes)
+    ov <- split(subjectHits(ov), queryHits(ov))
+    nc_exons$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      names(genes)[x]
+    }))
+    intergenicRegions <- genes
+    strand(intergenicRegions) <- "*"
+    intergenicRegions <- gaps(reduce(intergenicRegions))
+    intergenicRegions <- intergenicRegions[strand(intergenicRegions) == 
+                                             "*"]
+    cds_tx <- cdsBy(annotation, "tx", use.names = T)
+    txs_gene <- transcriptsBy(annotation, by = "gene")
+    genes_red <- reduce(sort(genes(annotation)))
+    exons_tx <- exonsBy(annotation, "tx", use.names = T)
+    transcripts_db <- transcripts(annotation)
+    intron_names_tx <- intronsByTranscript(annotation, use.names = T)
+    nsns <- exonicParts(annotation)
+    exsss_cds <- exons_tx[names(cds_tx)]
+    chunks <- seq(1, length(cds_tx), by = 20000)
+    if (chunks[length(chunks)] < length(cds_tx)) {
+      chunks <- c(chunks, length(cds_tx))
+    }
+    mapp <- GRangesList()
+    for (i in 1:(length(chunks) - 1)) {
+      if (i != (length(chunks) - 1)) {
+        mapp <- suppressWarnings(c(mapp, pmapToTranscripts(cds_tx[chunks[i]:(chunks[i + 
+                                                                                      1] - 1)], transcripts = exsss_cds[chunks[i]:(chunks[i + 
+                                                                                                                                            1] - 1)])))
+      }
+      if (i == (length(chunks) - 1)) {
+        mapp <- suppressWarnings(c(mapp, pmapToTranscripts(cds_tx[chunks[i]:(chunks[i + 
+                                                                                      1])], transcripts = exsss_cds[chunks[i]:(chunks[i + 
+                                                                                                                                        1])])))
+      }
+    }
+    cds_txscoords <- unlist(mapp)
+    cat(paste("Extracting ids and biotypes ... ", date(), 
+              "\n", sep = ""))
+    trann <- unique(mcols(import.gff2(gtf_file, colnames = c("gene_id", 
+                                                             "gene_biotype", "gene_type", "gene_name", "gene_symbol", 
+                                                             "transcript_id", "transcript_biotype", "transcript_type"))))
+    trann <- trann[!is.na(trann$transcript_id), ]
+    trann <- data.frame(unique(trann), stringsAsFactors = F)
+    if (sum(!is.na(trann$transcript_biotype)) == 0 & sum(!is.na(trann$transcript_type)) == 
+        0) {
+      trann$transcript_biotype <- "no_type"
+    }
+    if (sum(!is.na(trann$transcript_biotype)) == 0) {
+      trann$transcript_biotype <- NULL
+    }
+    if (sum(!is.na(trann$transcript_type)) == 0) {
+      trann$transcript_type <- NULL
+    }
+    if (sum(!is.na(trann$gene_biotype)) == 0 & sum(!is.na(trann$gene_type)) == 
+        0) {
+      trann$gene_type <- "no_type"
+    }
+    if (sum(!is.na(trann$gene_name)) == 0 & sum(!is.na(trann$gene_symbol)) == 
+        0) {
+      trann$gene_name <- "no_name"
+    }
+    if (sum(!is.na(trann$gene_biotype)) == 0) {
+      trann$gene_biotype <- NULL
+    }
+    if (sum(!is.na(trann$gene_type)) == 0) {
+      trann$gene_type <- NULL
+    }
+    if (sum(!is.na(trann$gene_name)) == 0) {
+      trann$gene_name <- NULL
+    }
+    if (sum(!is.na(trann$gene_symbol)) == 0) {
+      trann$gene_symbol <- NULL
+    }
+    colnames(trann) <- c("gene_id", "gene_biotype", "gene_name", 
+                         "transcript_id", "transcript_biotype")
+    trann <- DataFrame(trann)
+    unq_intr <- sort(unique(unlist(intron_names_tx)))
+    names(unq_intr) <- NULL
+    all_intr <- unlist(intron_names_tx)
+    ov <- findOverlaps(unq_intr, all_intr, type = "equal")
+    ov <- split(subjectHits(ov), queryHits(ov))
+    a_nam <- CharacterList(lapply(ov, FUN = function(x) {
+      unique(names(all_intr)[x])
+    }))
+    unq_intr$type = "J"
+    unq_intr$tx_name <- a_nam
+    mat_genes <- match(unq_intr$tx_name, trann$transcript_id)
+    g <- unlist(apply(cbind(1:length(mat_genes), Y = elementNROWS(mat_genes)), 
+                      FUN = function(x) rep(x[1], x[2]), MARGIN = 1))
+    g2 <- split(trann[unlist(mat_genes), "gene_id"], g)
+    unq_intr$gene_id <- CharacterList(lapply(g2, unique))
+    ncrnas <- nc_exons[!nc_exons %over% genes[trann$gene_id[trann$gene_biotype == 
+                                                              "protein_coding"]]]
+    ncisof <- nc_exons[nc_exons %over% genes[trann$gene_id[trann$gene_biotype == 
+                                                             "protein_coding"]]]
+    ifs <- seqinfo(annotation)
+    translations <- as.data.frame(ifs)
+    translations$genetic_code <- "1"
+    translations$genetic_code[rownames(translations) %in% 
+                                c("chrM", "MT", "MtDNA", "mit", "mitochondrion")] <- "2"
+    translations$genetic_code[rownames(translations) %in% 
+                                c("Mito")] <- "3"
+    translations$genetic_code[rownames(translations) %in% 
+                                c("dmel_mitochondrion_genome")] <- "5"
+    circs <- ifs@seqnames[which(ifs@is_circular)]
+    suppressPackageStartupMessages(library(pkgnm, character.only = TRUE))
+    genome <- get(pkgnm)
+    tocheck <- as.character(runValue(seqnames(cds_tx)))
+    tocheck <- cds_tx[!tocheck %in% circs]
+    seqcds <- extractTranscriptSeqs(genome, transcripts = tocheck)
+    cd <- unique(translations$genetic_code[!rownames(translations) %in% 
+                                             circs])
+    trsl <- suppressWarnings(translate(seqcds, genetic.code = getGeneticCode(cd), 
+                                       if.fuzzy.codon = "solve"))
+    trslend <- as.character(narrow(trsl, end = width(trsl), 
+                                   width = 1))
+    stop_inannot <- NA
+    if (names(sort(table(trslend), decreasing = T)[1]) == 
+        "*") {
+      stop_inannot <- "*"
+    }
+    cds_txscoords$gene_id <- trann$gene_id[match(as.vector(seqnames(cds_txscoords)), 
+                                                 trann$transcript_id)]
+    cds_cc <- cds_txscoords
+    strand(cds_cc) <- "*"
+    sta_cc <- resize(cds_cc, width = 1, "start")
+    sta_cc <- unlist(pmapFromTranscripts(sta_cc, exons_tx[seqnames(sta_cc)], 
+                                         ignore.strand = F))
+    sta_cc$gene_id <- trann$gene_id[match(names(sta_cc), 
+                                          trann$transcript_id)]
+    sta_cc <- sta_cc[sta_cc$hit]
+    strand(sta_cc) <- structure(as.vector(strand(transcripts_db)), 
+                                names = transcripts_db$tx_name)[names(sta_cc)]
+    sta_cc$type <- "start_codon"
+    mcols(sta_cc) <- mcols(sta_cc)[, c("exon_rank", "type", 
+                                       "gene_id")]
+    sto_cc <- resize(cds_cc, width = 1, "end")
+    sto_cc <- shift(sto_cc, -2)
+    if (is.na(stop_inannot)) {
+      sto_cc <- resize(trim(shift(sto_cc, 3)), width = 1, 
+                       fix = "end")
+    }
+    sto_cc <- unlist(pmapFromTranscripts(sto_cc, exons_tx[seqnames(sto_cc)], 
+                                         ignore.strand = F))
+    sto_cc <- sto_cc[sto_cc$hit]
+    sto_cc$gene_id <- trann$gene_id[match(names(sto_cc), 
+                                          trann$transcript_id)]
+    strand(sto_cc) <- structure(as.vector(strand(transcripts_db)), 
+                                names = transcripts_db$tx_name)[names(sto_cc)]
+    sto_cc$type <- "stop_codon"
+    mcols(sto_cc) <- mcols(sto_cc)[, c("exon_rank", "type", 
+                                       "gene_id")]
+    cat(paste("Defining most common start/stop codons ... ", 
+              date(), "\n", sep = ""))
+    start_stop_cc <- sort(c(sta_cc, sto_cc))
+    start_stop_cc$transcript_id <- names(start_stop_cc)
+    start_stop_cc$most_up_downstream <- FALSE
+    start_stop_cc$most_frequent <- FALSE
+    df <- cbind.DataFrame(start(start_stop_cc), start_stop_cc$type, 
+                          start_stop_cc$gene_id)
+    colnames(df) <- c("start_pos", "type", "gene_id")
+    upst <- by(df$start_pos, INDICES = df$gene_id, function(x) {
+      x == min(x) | x == max(x)
+    })
+    start_stop_cc$most_up_downstream <- unlist(upst[unique(df$gene_id)])
+    mostfr <- by(df[, c("start_pos", "type")], INDICES = df$gene_id, 
+                 function(x) {
+                   mfreq <- table(x)
+                   x$start_pos %in% as.numeric(names(which(mfreq[, 
+                                                                 1] == max(mfreq[, 1])))) | x$start_pos %in% 
+                     as.numeric(names(which(mfreq[, 2] == max(mfreq[, 
+                                                                    2]))))
+                 })
+    start_stop_cc$most_frequent <- unlist(mostfr[unique(df$gene_id)])
+    names(start_stop_cc) <- NULL
+    mostupstr_tx <- sum(LogicalList(split(start_stop_cc$most_up_downstream, 
+                                          start_stop_cc$transcript_id)))[as.character(seqnames(cds_txscoords))]
+    cds_txscoords$upstr_stasto <- mostupstr_tx
+    mostfreq_tx <- sum(LogicalList(split(start_stop_cc$most_frequent, 
+                                         start_stop_cc$transcript_id)))[as.character(seqnames(cds_txscoords))]
+    cds_txscoords$mostfreq_stasto <- mostfreq_tx
+    cds_txscoords$lentx <- sum(width(exons_tx[as.character(seqnames(cds_txscoords))]))
+    df <- cbind.DataFrame(as.character(seqnames(cds_txscoords)), 
+                          width(cds_txscoords), start(cds_txscoords), cds_txscoords$mostfreq_stasto, 
+                          cds_txscoords$gene_id)
+    colnames(df) <- c("txid", "cdslen", "utr5len", "var", 
+                      "gene_id")
+    repres_freq <- by(df[, c("txid", "cdslen", "utr5len", 
+                             "var")], df$gene_id, function(x) {
+                               x <- x[order(x$var, x$utr5len, x$cdslen, decreasing = T), 
+                               ]
+                               x <- x[x$var == max(x$var), ]
+                               ok <- x$txid[which(x$cdslen == max(x$cdslen) & x$utr5len == 
+                                                    max(x$utr5len) & x$var == max(x$var))][1]
+                               if (length(ok) == 0 | is.na(ok[1])) {
+                                 ok <- x$txid[1]
+                               }
+                               ok
+                             })
+    df <- cbind.DataFrame(as.character(seqnames(cds_txscoords)), 
+                          width(cds_txscoords), start(cds_txscoords), cds_txscoords$upstr_stasto, 
+                          cds_txscoords$gene_id)
+    colnames(df) <- c("txid", "cdslen", "utr5len", "var", 
+                      "gene_id")
+    repres_upstr <- by(df[, c("txid", "cdslen", "utr5len", 
+                              "var")], df$gene_id, function(x) {
+                                x <- x[order(x$var, x$utr5len, x$utr5len, decreasing = T), 
+                                ]
+                                x <- x[x$var == max(x$var), ]
+                                ok <- x$txid[which(x$cdslen == max(x$cdslen) & x$utr5len == 
+                                                     max(x$utr5len) & x$var == max(x$var))][1]
+                                if (length(ok) == 0 | is.na(ok[1])) {
+                                  ok <- x$txid[1]
+                                }
+                                ok
+                              })
+    df <- cbind.DataFrame(as.character(seqnames(cds_txscoords)), 
+                          width(cds_txscoords), start(cds_txscoords), cds_txscoords$upstr_stasto, 
+                          cds_txscoords$gene_id)
+    colnames(df) <- c("txid", "cdslen", "utr5len", "var", 
+                      "gene_id")
+    repres_len5 <- by(df[, c("txid", "cdslen", "utr5len", 
+                             "var")], df$gene_id, function(x) {
+                               x <- x[order(x$utr5len, x$var, x$cdslen, decreasing = T), 
+                               ]
+                               ok <- x$txid[which(x$utr5len == max(x$utr5len) & 
+                                                    x$var == max(x$var))][1]
+                               if (length(ok) == 0 | is.na(ok[1])) {
+                                 ok <- x$txid[1]
+                               }
+                               ok
+                             })
+    cds_txscoords$reprentative_mostcommon <- as.character(seqnames(cds_txscoords)) %in% 
+      unlist(repres_freq)
+    cds_txscoords$reprentative_boundaries <- as.character(seqnames(cds_txscoords)) %in% 
+      unlist(repres_upstr)
+    cds_txscoords$reprentative_5len <- as.character(seqnames(cds_txscoords)) %in% 
+      unlist(repres_len5)
+    unq_stst <- start_stop_cc
+    mcols(unq_stst) <- NULL
+    unq_stst <- sort(unique(unq_stst))
+    ov <- findOverlaps(unq_stst, start_stop_cc, type = "equal")
+    ov <- split(subjectHits(ov), queryHits(ov))
+    unq_stst$type <- CharacterList(lapply(ov, FUN = function(x) {
+      unique(start_stop_cc$type[x])
+    }))
+    unq_stst$transcript_id <- CharacterList(lapply(ov, FUN = function(x) {
+      start_stop_cc$transcript_id[x]
+    }))
+    unq_stst$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      unique(start_stop_cc$gene_id[x])
+    }))
+    unq_stst$reprentative_mostcommon <- sum(!is.na(match(unq_stst$transcript_id, 
+                                                         unlist(as(repres_freq, "CharacterList"))))) > 0
+    unq_stst$reprentative_boundaries <- sum(!is.na(match(unq_stst$transcript_id, 
+                                                         unlist(as(repres_upstr, "CharacterList"))))) > 0
+    unq_stst$reprentative_5len <- sum(!is.na(match(unq_stst$transcript_id, 
+                                                   unlist(as(repres_len5, "CharacterList"))))) > 0
+    GTF_annotation <- list(transcripts_db, txs_gene, ifs, 
+                           unq_stst, cds_tx, intron_names_tx, cds_gen, exons_tx, 
+                           nsns, unq_intr, genes, threeutrs, fiveutrs, ncisof, 
+                           ncrnas, introns, intergenicRegions, trann, cds_txscoords, 
+                           translations, pkgnm, stop_inannot)
+    names(GTF_annotation) <- c("txs", "txs_gene", "seqinfo", 
+                               "start_stop_codons", "cds_txs", "introns_txs", "cds_genes", 
+                               "exons_txs", "exons_bins", "junctions", "genes", 
+                               "threeutrs", "fiveutrs", "ncIsof", "ncRNAs", "introns", 
+                               "intergenicRegions", "trann", "cds_txs_coords", 
+                               "genetic_codes", "genome_package", "stop_in_gtf")
+    txs_all <- unique(GTF_annotation$trann$transcript_id)
+    txs_exss <- unique(names(GTF_annotation$exons_txs))
+    txs_notok <- txs_all[!txs_all %in% txs_exss]
+    if (length(txs_notok) > 0) {
+      set.seed(666)
+      cat(paste("Warning: ", length(txs_notok), " txs with incorrect/unspecified exon boundaries - e.g. trans-splicing events, examples: ", 
+                paste(txs_notok[sample(1:length(txs_notok), 
+                                       size = min(3, length(txs_notok)), replace = F)], 
+                      collapse = ", "), " - ", date(), "\n", sep = ""))
+    }
+    save(GTF_annotation, file = paste(annotation_directory, 
+                                      "/", basename(gtf_file), "_Rannot", sep = ""))
+    cat(paste("Rannot object created!   ", date(), "\n", 
+              sep = ""))
+    if (export_bed_tables_TxDb == T) {
+      cat(paste("Exporting annotation tables ... ", date(), 
+                "\n", sep = ""))
+      for (bed_file in c("fiveutrs", "threeutrs", "ncIsof", 
+                         "ncRNAs", "introns", "cds_txs_coords")) {
+        bf <- GTF_annotation[[bed_file]]
+        bf_t <- bf
+        if (length(bf) > 0) {
+          bf_t <- data.frame(chromosome = seqnames(bf), 
+                             start = start(bf), end = end(bf), name = ".", 
+                             score = width(bf), strand = strand(bf))
+          meccole <- mcols(bf)
+          for (mecc in names(meccole)) {
+            if (is(meccole[, mecc], "CharacterList") | 
+                is(meccole[, mecc], "NumericList") | is(meccole[, 
+                                                                mecc], "IntegerList")) {
+              meccole[, mecc] <- paste(meccole[, mecc], 
+                                       collapse = ";")
+            }
+          }
+          bf_t <- cbind.data.frame(bf_t, meccole)
+        }
+        write.table(bf_t, file = paste(annotation_directory, 
+                                       "/", bed_file, "_similbed.bed", sep = ""), 
+                    sep = "\t", quote = FALSE, row.names = FALSE, 
+                    col.names = F)
+      }
+      write.table(GTF_annotation$trann, file = paste(annotation_directory, 
+                                                     "/table_gene_tx_IDs", sep = ""), sep = "\t", 
+                  quote = FALSE, row.names = FALSE)
+      seqi <- as.data.frame(GTF_annotation$seqinfo)
+      seqi$chromosome <- rownames(seqi)
+      write.table(seqi, file = paste(annotation_directory, 
+                                     "/seqinfo", sep = ""), sep = "\t", quote = FALSE, 
+                  row.names = FALSE)
+      gen_cod <- as.data.frame(GTF_annotation$genetic_codes)
+      gen_cod$chromosome <- rownames(gen_cod)
+      write.table(gen_cod, file = paste(annotation_directory, 
+                                        "/genetic_codes", sep = ""), sep = "\t", quote = FALSE, 
+                  row.names = FALSE)
+      cat(paste("Exporting annotation tables --- Done! ", 
+                date(), "\n", sep = ""))
+    }
+  }
+}
+
+### SET DIRECTORY 
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/") 
+
+### PREPARE ANNOTATION FILE ________________________________________________________________________________________ 
+prepare_annotation_files(annotation_directory = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations",
+                         twobit_file = "Y:/Omics/Annotations_RNASeq/genome.2bit",
+                         gtf_file = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations/Araport11_GTF_genes_transposons.20241001.gtf",
+                         scientific_name = "Arabidopsis.thaliana",
+                         annotation_name = "Araport11")
+
+### RUN RIBOSEQC ___________________________________________________________________________________________________ 
+### BUILD PATH TO BAM FILES 
+bamFiles <- dir(path = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/STAR_Output/",
+                pattern = ".*Coord.out.bam",
+                full.names = TRUE)
+
+RiboseQC_analysis(annotation_file = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations/Araport11_GTF_genes_transposons.20241001.gtf_Rannot",
+                  bam_files = bamFiles,
+                  write_tmp_files = FALSE,
+                  sample_names = gsub("\\.Aligned\\..*bam$","", bamFiles),
+                  extended_report = FALSE,
+                  stranded = FALSE)
+
+#create HTML report ________________________________________________________________________________________________
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/STAR_Output/")
+create_html_report(input_files = list.files(pattern = "results", path = "."),
+                   input_sample_names = c("3wLR1","3wLR2", "2wSR1", "2wSR2", "8dLR1", "8dLR2", "8dSR1","8dSR2", "ER1", "ER2", "LmR1", "LmR2", "LpR1", "LpR2", "SmR1", "SmR2", "SpR1", "SpR2"),
+                   output_file = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/STAR_Output/report.html",
+                   extended = FALSE)
+
+#filter raw data based on sequence length ###########################################################################
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/filtered/")
+
+for (i in list.files(pattern = ".fastq.gz")) {
+  system(paste0("wsl zcat ", i, 
+                " | seqkit seq -m 20 -M 30 ", 
+                "-o Filtered_Output/", i))
+}
+
+# QUALITY CONTROL ON FILTERED READS ##################################################################################
+
+#QUALITY CONTROL USING FASTQC FOR FILTERED READS #####################################################################
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/filtered/Filtered_Output/") #switch to directory containing the reads
+system(paste("wsl fastqc *.fastq.gz --outdir FastQC/")) #Run FastQC over all files and save results to specified folder
+
+# SET DIRECTORIES ____________________________________________________________________________________________________
+
+#Set linux path to genome directory
+genomeDir <- "/mnt/y/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/filtered/Filtered_Output/STAR_Index"
+#Set linux path to genome fasta file
+genomeFastaFiles <- "/mnt/y/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations/TAIR10_chr_all.fas"
+#Set linux path to annotation GTF file
+GTFfile <- "/mnt/y/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations/Araport11_GTF_genes_transposons.20241001.gtf"
+
+# STAR MAPPING OF FILTERED READS#######################################################################################
+
+#Generate Reference Genome ____________________________________________________________________________________________ 
+system(paste("wsl ~/STAR-2.7.11b/source/STAR",
+             "--runThreadN 30", #number of threads to use for computation
+             "--runMode genomeGenerate", #run mode to generate index
+             "--genomeDir", genomeDir, #directory in which to store the index (see above)
+             "--genomeFastaFiles", genomeFastaFiles, #directory of the genome fasta (see above)
+             "--sjdbGTFfile", GTFfile, #directory of the annotation (see above)
+             "--sjdbOverhang 29", # max read length - 1
+             "--genomeSAindexNbases 12")) #length of SA pre-indexing string, scaled to Arabidopsis genome according to manual: min(14, log2(GenomeLength)/2 - 1)
+
+#Run STAR mapping in single-end mode ___________________________________________________________________________________ 
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/filtered/Filtered_Output") #switch to directory containing the filtered reads
+
+for (k in list.files(pattern = ".fastq.gz$")) { 
+  system(paste0("wsl echo \"Processing ", k, "\"; ~/STAR-2.7.11b/source/STAR ",
+                "--readFilesCommand zcat ",
+                "--genomeDir ", genomeDir, " ",
+                "--readFilesIn ", k, " ",
+                "--outFileNamePrefix ~/STAR_Output/", gsub("fastq\\.gz$", "", k), " ",
+                "--quantMode GeneCounts ",
+                "--runThreadN 12 ", 
+                "--alignSJoverhangMin 8 ", 
+                "--alignSJDBoverhangMin 2 ", 
+                "--outSAMtype BAM SortedByCoordinate ", 
+                "--outSAMmultNmax 1 ", 
+                #"--outMultimapperOrder Random ", 
+                "--outFilterMismatchNmax 1 ", 
+                "--outFilterMultimapNmax 20 ", 
+                "--outFilterType BySJout ", 
+                "--outReadsUnmapped Fastx"))
+  print("Moving STAR Output from Linux filesystem to Windows...")
+  system("wsl mv ~/STAR_Output/* /mnt/y/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/filtered/Filtered_Output/STAR_Output/")
+  print("Done")
+}
+
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA") #switch back to original working directory
+
+#QUALITRY USING MULTIQC FOR FILTERED READS ##############################################################################
+
+#run MultiQC to get a summarised report
+#run in Ubuntu shell because it's not working with the system("wsl ...") command,  
+# cd /mnt/y/Omics/RiboSeq/Growth_Conditions_rRNA/ #set working directory
+# multiqc . -o MultiQC/ #performing MultiQC analysis with data from working directory, MultiQC report will be saved in the defined output directory 
+
+# FILTERED STAR DATA IMPORT #############################################################################################
+
+#Set working directory of data to be analyzed
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/filtered/Filtered_Output/")
+
+#Set strandedness of the library (influences which counts to read from STAR count files)
+# 2 = unstranded
+# 3 = 1st read strand (stranded = yes)
+# 4 = 2nd read strand (stranded = reverse)
+strnd <- 2
+
+#Read the counts of each samples ReadsPerGene file and cbind them
+for (i in list.files("./STAR_Output/", pattern = "ReadsPerGene", full.names = TRUE)) {
+  temp <- read.table(i)
+  head(temp)
+  temp <- temp[-c(1:4),]
+  
+  if(grep(i, list.files("./STAR_Output/", pattern = "ReadsPerGene", full.names = TRUE)) == 1){
+    STAR.counts.filtered <- data.frame(temp[,strnd])
+    row.names(STAR.counts.filtered) <- temp[,1]
+  }else{
+    STAR.counts.filtered <- cbind(STAR.counts, temp[,strnd])
+    colnames(STAR.counts.filtered) <- gsub("\\.ReadsPerGene.*$","",list.files("./STAR_Output/", pattern = "ReadsPerGene")[1:length(colnames(STAR.counts.filtered))])
+  }
+  rm(temp,i)
+}
+
+## QUALITY CONTROL USING RIBOSEQC FOR FILTERED READS #####################################################################
 
 ### If not already done, get twobit programs and place them in F:\Annotations_RNASeq
 ### Download faToTwoBit program from: http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/faToTwoBit
@@ -2184,21 +2739,21 @@ prepare_annotation_files <- function (annotation_directory, twobit_file, gtf_fil
                 date(), "\n", sep = ""))
     }
   }
-}
+} 
 
 ### SET DIRECTORY 
-setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/") 
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/filtered/Filtered_Output/") 
 
-### PREPARE ANNOTATION FILE 
+### PREPARE ANNOTATION FILE ___________________________________________________________________________________________ 
 prepare_annotation_files(annotation_directory = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations",
                          twobit_file = "Y:/Omics/Annotations_RNASeq/genome.2bit",
                          gtf_file = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations/Araport11_GTF_genes_transposons.20241001.gtf",
                          scientific_name = "Arabidopsis.thaliana",
                          annotation_name = "Araport11")
 
-### RUN RIBOSEQC 
+### RUN RIBOSEQC ______________________________________________________________________________________________________ 
 ### BUILD PATH TO BAM FILES 
-bamFiles <- dir(path = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/STAR_Output/",
+bamFiles <- dir(path = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/filtered/Filtered_Output/STAR_Output/",
                 pattern = ".*Coord.out.bam",
                 full.names = TRUE)
 
@@ -2209,24 +2764,17 @@ RiboseQC_analysis(annotation_file = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/Ann
                   extended_report = FALSE,
                   stranded = FALSE)
 
-#create HTML report 
-setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/STAR_Output/")
+#create HTML report ____________________________________________________________________________________________________
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/filtered/Filtered_Output/STAR_Output/")
 create_html_report(input_files = list.files(pattern = "results", path = "."),
                    input_sample_names = c("3wLR1","3wLR2", "2wSR1", "2wSR2", "8dLR1", "8dLR2", "8dSR1","8dSR2", "ER1", "ER2", "LmR1", "LmR2", "LpR1", "LpR2", "SmR1", "SmR2", "SpR1", "SpR2"),
-                   output_file = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/STAR_Output/report.html",
+                   output_file = "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/filtered/Filtered_Output/STAR_Output/filtered_report.html",
                    extended = FALSE)
 
-#filter raw data based on sequence length 
-setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/filtered/")
 
-for (i in list.files(pattern = ".fastq.gz")) {
-  system(paste0("wsl zcat ", i, 
-                " | seqkit seq -m 20 -M 30 ", 
-                "-o Filtered_Output/", i))
-}
 
-# Description:
-# This R script identifies the 100 most abundant sequences from a set of BAM files,
+#IDENTIFICATION OF HIGHLY ABUNDANT NON-CODING SEQUENCES IN RIBOSEQ LIBRARIES ##########################################
+# This R script identifies the most abundant sequences from a set of BAM files,
 # counts their occurrences, and outputs the results in a table format. 
 # Additionally, it generates a heat map to visualize the relative abundance of these sequences 
 # across all samples.
@@ -2240,62 +2788,106 @@ for (i in list.files(pattern = ".fastq.gz")) {
 #
 # Outputs:
 # - A CSV file containing the counts of the 100 most abundant sequences.
-# - A heat map in PNG format showing the abundance of the top sequences across samples.
+# - A heat map showing the abundance of the top sequences across samples.
 #
 # Requirements:
 # - R version 4.0 or higher.
 #
-# Author: Maik Böhmer
+# Authors: Maik Böhmer and Dario Ricciardi
 # Date: 16.11.2024
 
+# Install necessary libraries
+#if (!require("BiocManager", quietly = TRUE))
+#install.packages("BiocManager")
+#BiocManager::install(version = "3.20")
+#BiocManager::install(c("txdbmaker"))
 
 # Load necessary libraries
+library(txdbmaker)
 library(Rsamtools)
 library(dplyr)
 library(tidyr)
-library(GenomicFeatures)
-library(rtracklayer)
-library(txdbmaker)
-library(Biostrings)
 library(ggplot2)
-library(viridis)     # best. color. palette. evar.
-library(ggthemes)    # has a clean theme for ggplot2
 
-
-# set working directory
-setwd("~/RiboSeq_cotaminants")
 
 # Function to count sequences and map to genes in a BAM file
 count_sequences <- function(bam_file, gene_ranges) {
+  
+  print("Extracting sequences")
+  
   # Open the BAM file
   bam <- scanBam(BamFile(bam_file))
   
   # Extract sequences and mapping positions
-  sequences <- as.character(bam[[1]]$seq)  # Convert DNAStringSet to character
-  chrom <- bam[[1]]$rname
-  start <- bam[[1]]$pos
-  end <- start + width(DNAStringSet(sequences)) - 1
+  seqs <- data.frame("sequences" = as.character(bam[[1]]$seq),
+                     "chrom" = bam[[1]]$rname,
+                     "start" = bam[[1]]$pos,
+                     "end" = bam[[1]]$pos + width(DNAStringSet(as.character(bam[[1]]$seq))) - 1)
+  
+  print("Counting sequences and fetching gene IDs")
+  
+  # Count all sequences and only display uniques with their counts
+  seqs.count <- count(group_by_all(seqs))
   
   # Create a GRanges object for the sequences
-  sequences_gr <- GRanges(seqnames = chrom, ranges = IRanges(start = start, end = end), strand = "*")
+  sequences_gr <- GRanges(seqnames = seqs.count$chrom, ranges = IRanges(start = seqs.count$start, end = seqs.count$end), strand = "*")
   
   # Map sequences to genes
-  hits <- findOverlaps(sequences_gr, gene_ranges, ignore.strand = TRUE)
-  gene_ids <- as.character(mcols(gene_ranges)[subjectHits(hits), "gene_id"])
+  hits <- findOverlaps(sequences_gr, gene_ranges, ignore.strand = TRUE, select = "first")
+  gene_ids <- as.character(mcols(gene_ranges)[hits, "gene_id"])
   
-  # Create a tibble with sequences and gene IDs
-  sequence_counts_tbl <- tibble(Sequence = sequences[queryHits(hits)], Gene = gene_ids)
+  # Add gene ids to counted sequences
+  seqs.count$gene_id <- gene_ids
+  seqs.count <- data.frame(seqs.count)
   
-  # Count the appearances of each sequence
-  sequence_counts_tbl <- sequence_counts_tbl %>%
-    group_by(Sequence, Gene) %>%
-    summarise(Count = n(), .groups = "drop")
   
-  return(sequence_counts_tbl)
+  # Return data
+  return(seqs.count)
 }
 
+# Function to summarize the same sequences even if they are mapped to different loci
+accumulateFragments <- function(x, accumulate, ntop = 2000, fuzzyness = 3){
+  contams <- data.frame()
+  y <- na.omit(unique(x$Sequence[1:100000])[1:ntop])
+  y <- y[order(nchar(y))]
+  ylen <- length(y)
+  # Loop through all sequences from short to long
+  while (length(y) > 0) {
+    k <- y[1]
+    #print(k) #For debugging
+    # Pick out set of sequences that match the shortest one of interest (fuzzy matching if desired)
+    if(accumulate == "fuzzy"){
+      temp <- x[grepl(substr(k, fuzzyness+1, nchar(k)-fuzzyness), x$Sequence),]
+    }else if(accumulate == "shortest"){
+      temp <- x[grepl(k, x$Sequence),]
+    }else if (accumulate == "sequence"){
+      temp <- x[x$Sequence == k,]
+    }else{print("accumulate must be either 'sequence', 'shortest' or 'fuzzy'")}
+    # Sum up counts and collapse all mappings and biotypes into a single character string
+    temp <- temp[order(nchar(temp$Sequence)),]
+    temp[1,4:(3+length(sequence_counts_list))] <- colSums(temp[,4:(3+length(sequence_counts_list))])
+    if(length(paste(unique(na.omit(temp$Gene_ID)), sep = ",")) > 0){
+      temp$Gene_ID[1] <- paste(sort(unique(na.omit(temp$Gene_ID))), collapse = ",")
+    }else temp$Gene_ID[1] <- NA
+    if(length(paste(unique(na.omit(temp$type)), sep = ",")) > 0){
+      temp$type[1] <- paste(sort(unique(na.omit(temp$type))), collapse = ",")
+    }else temp$type[1] <- NA
+    
+    #Bind temp to contams
+    contams <- na.omit(rbind(contams, temp[1,]))
+    #Eliminate matches from fragment list
+    x <- x[!x$Sequence %in% unique(temp$Sequence),]
+    y <- y[grep(k, y, invert = TRUE)]
+    print(paste(length(y), "of", ylen, "sequences remaining"))
+  }
+  return(contams[order(-rowSums(contams[, 4:(3+length(sequence_counts_list))])),])
+}
+
+# Read Metadata
+Gene.Metadata <- read.table("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
+
 # Path to the annotation file (e.g., GTF or GFF)
-annotation_file <- "Araport11_GTF_genes_transposons.20241001.gtf"
+annotation_file <- "Y:/Omics/RiboSeq/Growth_Conditions_rRNA/Annotations/Araport11_GTF_genes_transposons.20241001.gtf"
 
 # Create a TxDb object from the annotation file using txdbmaker
 txdb <- txdbmaker::makeTxDbFromGFF(annotation_file, format = "gtf")
@@ -2303,65 +2895,969 @@ txdb <- txdbmaker::makeTxDbFromGFF(annotation_file, format = "gtf")
 # Extract gene ranges
 gene_ranges <- genes(txdb)
 
+# PROCESS INPUT FILES #####################################################################################
+# Set working directory
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA/RawData/filtered/Filtered_Output/STAR_Output/")
+setwd("Y:/Omics/RiboSeq/LNA_Oligo_Depletion/STAR_Output/")
+
 # Get list of BAM files in the current working directory
-bam_files <- list.files(pattern = "\\.bam$")
+bam_files <- list.files(pattern = "\\Coord.out.bam$")
 
 # Initialize an empty list to store sequence counts from each file
 sequence_counts_list <- list()
 
 # Loop over each BAM file and get sequence counts
 for (bam_file in bam_files) {
+  print(paste("Working on", bam_file))
   sequence_counts <- count_sequences(bam_file, gene_ranges)
-  sequence_counts <- sequence_counts %>%
-    mutate(File = bam_file)
-  sequence_counts_list[[bam_file]] <- sequence_counts
+  samplename <- gsub("\\.fas.*$|\\.?Aligned.*$","", bam_file)
+  sequence_counts$sample <- samplename
+  sequence_counts <- sequence_counts[order(sequence_counts$n, decreasing = TRUE),]
+  sequence_counts_list[[samplename]] <- sequence_counts[,c(1,5:6)]
+  print("Done")
 }
 
-# Combine sequence counts from all files into a single tibble
-combined_sequence_counts <- bind_rows(sequence_counts_list)
+total_counts <- unlist(lapply(sequence_counts_list, function(x){sum(x[,2])}))
 
-# Get the top 100 most abundant sequences
-top_sequences <- combined_sequence_counts %>%
-  group_by(Sequence, Gene) %>%
-  summarise(TotalCount = sum(Count), .groups = "drop") %>%
-  arrange(desc(TotalCount)) %>%
-  slice_head(n = 100)
+#### MERGE DATA FRAMES ####################################################################################
 
-# Create a comparison table
-comparison_table <- top_sequences %>%
-  left_join(combined_sequence_counts, by = c("Gene" , "Sequence")) %>%
-  ungroup() %>%
-  dplyr::select(Gene, Sequence, File, Count)
+start <- Sys.time()
 
-test <- comparison_table[order(-comparison_table[,2], comparison_table[,1]), ]
+# Build comparison table over all samples
+# Merge all data frames into one
+combined_sequence_counts <- sequence_counts_list
+for (i in names(combined_sequence_counts)) {
+  combined_sequence_counts[[i]] <- combined_sequence_counts[[i]][,1:3]
+  combined_sequence_counts[[i]]$rnd_ID <- runif(n= length(combined_sequence_counts[[i]]$gene_id))
+}
 
-# Group by 'sequence' and summarize
-comparison_table <- comparison_table %>%
-  group_by(Sequence, File) %>%
-  summarize(
-    Gene = paste(unique(Gene), collapse = ", "),
-    Count = first(Count),  # Take the first count (assuming they are identical)
-    .groups = 'drop'
-  )
+# Merge all lists into one
+combined_sequence_counts <- Reduce(function(x, y) merge(x, y, by = c("sequences", "gene_id", "rnd_ID"), all = TRUE), combined_sequence_counts)
 
-# Pivot the table to a wider format for comparison
-comparison_table_wide <- comparison_table %>%
-  pivot_wider(names_from = File, values_from = Count, values_fill = list(Count = 0))
+# Clean up random gene ids and colnames
+combined_sequence_counts <- combined_sequence_counts[,-3]
+colnames(combined_sequence_counts) <- c("Sequence", "Gene_ID", names(sequence_counts_list))
 
-# Print the comparison table
-print(comparison_table_wide)
+# Convert absolute counts to percentage of counts in relation to total counts per sample
+for (i in 3:length(colnames(combined_sequence_counts))) {
+  combined_sequence_counts[,i] <- combined_sequence_counts[,i] / total_counts[i-2] * 100
+}
 
-# Optionally, write the comparison table to a CSV file
-write.csv(comparison_table_wide, "comparison_table.csv", row.names = FALSE)
+# Replace NA with 0
+combined_sequence_counts[is.na(combined_sequence_counts)] <- 0
+combined_sequence_counts$Gene_ID[combined_sequence_counts$Gene_ID == 0] <- NA
+
+# Add biotype metadata to sequences
+combined_sequence_counts <- merge(combined_sequence_counts, Gene.Metadata[,1:2], sort = FALSE, all.x = TRUE, by.x = "Gene_ID", by.y = "ID")
+combined_sequence_counts <- combined_sequence_counts[, c("Gene_ID", "Sequence", "type", names(sequence_counts_list))]
+
+# Sort by row-wise sums
+combined_sequence_counts <- combined_sequence_counts[order(rowSums(combined_sequence_counts[,c(names(sequence_counts_list))]), decreasing = TRUE),]
+
+time.merge <- Sys.time() - start
+time.merge
+
+# SUMMARIZE SEQUENCES ###############################################################################
+
+#Summarize sequences across loci
+# Accumulate counts of the same sequences
+# "sequence" to summarize by exact sequence
+# "shortest" to summarize all sequences that share a shortest common sequence
+# "fuzzy" is the same as shortest but allows for overhangs of 1 nt at each end
+accumulated_sequences <- accumulateFragments(combined_sequence_counts, accumulate = "shortest")
+
+# RESULTS AND PLOTTING ###############################################################################
+
+# Write the comparison table to a CSV file
+write.csv(accumulated_sequences, "Z:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Contaminating_Sequences.csv", row.names = FALSE)
 
 # Create a heat map visualization by sequence
-heatmap_data <- comparison_table_wide %>%
-  gather(key = "File", value = "Count", -Sequence, -Gene)
 
-ggplot(heatmap_data, aes(x = File, y = Sequence, fill = Count)) +
+# Define how many of the top contaminants you want to plot
+top <- 30
+# Transform data to long format for plotting and use top contaminant sequences
+heatmap_data <- accumulated_sequences[1:top,] %>%
+  gather(key = "Sample", value = "Count", -Sequence, -Gene_ID, -type)
+heatmap_data$Gene_ID <- factor(accumulated_sequences$Gene_ID[1:top], levels = unique(accumulated_sequences$Gene_ID[1:top]), ordered = TRUE)
+heatmap_data$type <- factor(accumulated_sequences$type[1:top], levels = unique(accumulated_sequences$type[1:top]), ordered = TRUE)
+#heatmap_data$Sequence <- factor(accumulated_sequences$Sequence[1:top], levels = rev(accumulated_sequences$Sequence[1:top]), ordered = TRUE)
+
+# Add sequence length information
+heatmap_data$Sequence <- paste0("...", heatmap_data$Sequence, "..."
+                                #" (", nchar(heatmap_data$Sequence), ")"
+)
+heatmap_data$Sequence <- factor(heatmap_data$Sequence, levels = rev(unique(heatmap_data$Sequence)), ordered = TRUE)
+
+# Calculate percentages to add to plot
+heatmap_data$perc[heatmap_data$Sequence == heatmap_data$Sequence[1]] <- paste0(round(colSums(accumulated_sequences[1:top, 4:length(colnames(accumulated_sequences))])), "%")
+
+# Plot
+ggplot(heatmap_data, aes(x = Sample, y = Sequence, fill = Count)) +
   geom_tile() +
-  facet_grid(Gene~.,scales="free_y", space="free_y") +
+  facet_grid(type~.,scales="free_y", space="free_y") +
   theme(strip.text.y.right = element_text(angle = 0),
-        axis.text=element_text(size=6)) +
-  scale_fill_viridis(name="Count") +
-  labs(title = "Read count distribution of top contaminants among samples", x = "Sample", y = "Fragment")
+        axis.text=element_text(size=8),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        plot.title = element_text(margin = margin(b = 20))) +
+  scale_fill_gradientn(colors = met.brewer("Morgenstern"), name="Percent") +
+  geom_text(label = heatmap_data$perc, vjust = -2, size = 3.5) +
+  labs(title = "Distribution of Top Contaminating Fragments", x = "Sample", y = "Fragment")+
+  coord_cartesian(clip = "off")
+
+# Save Plot
+ggsave("Z:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Contaminating_Sequences_Heatmap_byShortest_andBiotype.png",
+       width = 40, height = 24, units = "cm"
+)
+
+# Elbow curve analysis to find optimal number of LNA blockers
+
+# Calculate cumulative percentages along the top contaminant fragments
+heatmap_data$cumPerc <- NA
+heatmap_data$topN <- NA
+for (i in unique(heatmap_data$Sample)) {
+  for (k in 1:nrow(subset(heatmap_data, Sample == i))) {
+    heatmap_data[which(heatmap_data$Sample == i),]$cumPerc[k] <- sum(heatmap_data[which(heatmap_data$Sample == i),]$Count[1:k])
+    heatmap_data[which(heatmap_data$Sample == i),]$topN[k] <- k
+  }
+}
+
+# Plot elbow curve
+Morgenstern <- colorRampPalette(met.brewer("Morgenstern"))(length(unique(heatmap_data$Sample)))
+
+ggplot(heatmap_data, aes(x = topN, y = cumPerc, color = Sample))+
+  #geom_line(linewidth = 1)+
+  #geom_point()+
+  geom_line(data = subset(heatmap_data, topN %in% c(1,seq(5,top,5))),linewidth = 2)+ #Binning every 5 fragments
+  scale_color_manual(name = "Sample", values = Morgenstern) +
+  labs(title = "Elbow curve of cumulative fragment percentages", x = "Number of LNAs", y = "Cumulative Contaminant Percentage")+
+  scale_x_continuous(breaks = seq(1,top,1), minor_breaks = NULL)+
+  scale_y_continuous(breaks = seq(0,100,10))+
+  geom_vline(xintercept = seq(5,top,5))+
+  theme_minimal()
+ggsave("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/Growth_conditions/Contaminating_Sequences_Elbowcurve1.png",
+       width = 30, height = 15, units = "cm"
+)
+
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Ribo-Seq analyses for rRNA depleted and undepleted libraries  ###############################################
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+# PREPARE RAW DATA ############################################################################################
+
+#Rename files to a uniform and short format if not already done 
+setwd("Y:/Omics/RiboSeq/LNA_Oligo_Depletion/RawData/cleaned") 
+file.rename(dir(), gsub("-SMALLRNA.*Seq", "",dir()))
+#Only work with gzipped files for more efficient storage
+#Keep all files in a single folder
+
+# QUALITY CONTROL USING FASTQC ################################################################################
+
+#Run FastQC on the read files _________________________________________________________________________________
+setwd("Y:/Omics/RiboSeq/LNA_Oligo_Depletion/RawData/cleaned/") #switch to directory containing the reads
+system(paste("wsl fastqc *.fastq.gz --outdir ../FastQC/")) #Run FastQC over all files and save results to specified folder
+
+# SET DIRECTORIES _____________________________________________________________________________________________
+
+#Set linux path to genome directory
+genomeDir <- "/mnt/y/Omics/RiboSeq/LNA_Oligo_Depletion/Annotations/STAR_Index"
+#Set linux path to genome fasta file
+genomeFastaFiles <- "/mnt/y/Omics/RiboSeq/LNA_Oligo_Depletion/Annotations/TAIR10_chr_all.fas"
+#Set linux path to annotation GTF file
+GTFfile <- "/mnt/y/Omics/RiboSeq/LNA_Oligo_Depletion/Annotations/Araport11_GTF_genes_transposons.20241001.gtf"
+
+# STAR MAPPING ################################################################################################
+
+#Generate Reference Genome ____________________________________________________________________________________ 
+system(paste("wsl ~/STAR-2.7.11b/source/STAR",
+             "--runThreadN 30", #number of threads to use for computation
+             "--runMode genomeGenerate", #run mode to generate index
+             "--genomeDir", genomeDir, #directory in which to store the index (see above)
+             "--genomeFastaFiles", genomeFastaFiles, #directory of the genome fasta (see above)
+             "--sjdbGTFfile", GTFfile, #directory of the annotation (see above)
+             "--sjdbOverhang 63", # max read length - 1
+             "--genomeSAindexNbases 12")) #length of SA pre-indexing string, scaled to Arabidopsis genome according to manual: min(14, log2(GenomeLength)/2 - 1)
+
+#Run STAR mapping in single-end mode ___________________________________________________________________________
+setwd("Y:/Omics/RiboSeq/LNA_Oligo_Depletion/RawData/cleaned/") #switch to directory containing the reads
+
+for (k in list.files(pattern = ".fastq.gz$")) { 
+  system(paste0("wsl echo \"Processing ", k, "\"; ~/STAR-2.7.11b/source/STAR ",
+                "--readFilesCommand zcat ",
+                "--genomeDir ", genomeDir, " ",
+                "--readFilesIn ", k, " ",
+                "--outFileNamePrefix ~/STAR_Output/", gsub("fastq\\.gz$", "", k), " ",
+                "--quantMode GeneCounts ",
+                "--runThreadN 12 ", 
+                "--alignSJoverhangMin 8 ", 
+                "--alignSJDBoverhangMin 2 ", 
+                "--outSAMtype BAM SortedByCoordinate ", 
+                "--outSAMmultNmax 1 ", 
+                "--outMultimapperOrder Random ", 
+                "--outFilterMismatchNmax 1 ", 
+                "--outFilterMultimapNmax 20 ", 
+                "--outFilterType BySJout ", 
+                "--outReadsUnmapped Fastx"))
+  print("Moving STAR Output from Linux filesystem to Windows...")
+  system("wsl mv ~/STAR_Output/* /mnt/y/Omics/RiboSeq/LNA_Oligo_Depletion/STAR_Output/")
+  print("Done")
+}
+
+setwd("Y:/Omics/RiboSeq/Growth_Conditions_rRNA") #switch back to original working directory
+
+#QUALITY CONTROL USING MULTIQC ###################################################################################
+
+#run MultiQC to get a summarised report
+#run in Ubuntu shell because it's not working with the system("wsl ...") command,  
+# cd /mnt/y/Omics/RiboSeq/LNA_Oligo_Depletion/ #set working directory
+# conda activate py3.11 #activate current version of python before running multiqc
+# multiqc . -o MultiQC/ #performing MultiQC analysis with data from working directory, MultiQC report will be saved in the defined output directory 
+
+# STAR DATA IMPORT ################################################################################################
+
+#Set working directory of data to be analyzed
+setwd("Y:/Omics/RiboSeq/LNA_oligo_Depletion/")
+
+#Set strandedness of the library (influences which counts to read from STAR count files)
+# 2 = unstranded
+# 3 = 1st read strand (stranded = yes)
+# 4 = 2nd read strand (stranded = reverse)
+strnd <- 2
+
+#Read the counts of each samples ReadsPerGene file and cbind them
+for (i in list.files("./STAR_Output/", pattern = "ReadsPerGene", full.names = TRUE)) {
+  temp <- read.table(i)
+  head(temp)
+  temp <- temp[-c(1:4),]
+  
+  if(grep(i, list.files("./STAR_Output/", pattern = "ReadsPerGene", full.names = TRUE)) == 1){
+    STAR.counts.dep <- data.frame(temp[,strnd])
+    row.names(STAR.counts.dep) <- temp[,1]
+  }else{
+    STAR.counts.dep <- cbind(STAR.counts.dep, temp[,strnd])
+    colnames(STAR.counts.dep) <- gsub("\\.ReadsPerGene.*$","",list.files("./STAR_Output/", pattern = "ReadsPerGene")[1:length(colnames(STAR.counts.dep))])
+  }
+  rm(temp,i)
+}
+
+## QUALITY CONTROL USING RIBOSEQC ##################################################################################
+### PREPARE TWOBIT FILE ____________________________________________________________________________________________ 
+system("wsl /mnt/y/Omics/Annotations_RNASeq/faToTwoBit /mnt/y/Omics/Annotations_RNASeq/TAIR10_chr_all.fas /mnt/y/Omics/Annotations_RNASeq/genome.2bit")
+### CHECK TWOBIT FILE INTEGRITY 
+system("wsl /mnt/y/Omics/Annotations_RNASeq/twoBitInfo /mnt/y/Omics/Annotations_RNASeq/genome.2bit stdout | sort -k2rn")
+
+### MODIFY PREPARE_ANNOTATION_FILES FUNCTION TO PROPERLY EXTRACT EXON INFORMATION 
+prepare_annotation_files <- function (annotation_directory, twobit_file, gtf_file, scientific_name = "Homo.sapiens", 
+                                      annotation_name = "genc25", export_bed_tables_TxDb = T, 
+                                      forge_BSgenome = T, create_TxDb = T) 
+{
+  DEFAULT_CIRC_SEQS <- unique(c("chrM", "MT", "MtDNA", "mit", 
+                                "Mito", "mitochondrion", "dmel_mitochondrion_genome", 
+                                "Pltd", "ChrC", "Pt", "chloroplast", "Chloro", "2micron", 
+                                "2-micron", "2uM", "Mt", "NC_001879.2", "NC_006581.1", 
+                                "ChrM", "mitochondrion_genome"))
+  annotation_name <- gsub(annotation_name, pattern = "_", 
+                          replacement = "")
+  annotation_name <- gsub(annotation_name, pattern = "-", 
+                          replacement = "")
+  if (!dir.exists(annotation_directory)) {
+    dir.create(path = annotation_directory, recursive = T)
+  }
+  annotation_directory <- normalizePath(annotation_directory)
+  twobit_file <- normalizePath(twobit_file)
+  gtf_file <- normalizePath(gtf_file)
+  for (f in c(twobit_file, gtf_file)) {
+    if (file.access(f, 0) == -1) {
+      stop("\n                 The following files don't exist:\n", 
+           f, "\n")
+    }
+  }
+  scientific_name_spl <- strsplit(scientific_name, "[.]")[[1]]
+  ok <- length(scientific_name_spl) == 2
+  if (!ok) {
+    stop("\"scientific_name\" must be two words separated by a \".\", like \"Homo.sapiens\"")
+  }
+  seqinfotwob <- seqinfo(TwoBitFile(twobit_file))
+  circss <- seqnames(seqinfotwob)[which(seqnames(seqinfotwob) %in% 
+                                          DEFAULT_CIRC_SEQS)]
+  seqinfotwob@is_circular[which(seqnames(seqinfotwob) %in% 
+                                  DEFAULT_CIRC_SEQS)] <- TRUE
+  pkgnm <- paste("BSgenome", scientific_name, annotation_name, 
+                 sep = ".")
+  circseed <- circss
+  if (length(circseed) == 0) {
+    circseed <- NULL
+  }
+  if (forge_BSgenome) {
+    cat(paste("Creating the BSgenome package ... ", date(), 
+              "\n", sep = ""))
+    seed_text <- paste("Package: BSgenome.", scientific_name, 
+                       ".", annotation_name, "\n", "Title: Full genome sequences for ", 
+                       scientific_name, ", ", annotation_name, "\n", "Description: Full genome sequences for ", 
+                       scientific_name, ", ", annotation_name, "\n", "Version: 1.0", 
+                       "\n", "organism: ", scientific_name, "\n", "common_name: ", 
+                       scientific_name, "\n", "provider: NA", "\n", "provider_version: ", 
+                       annotation_name, "\n", "release_date: NA", "\n", 
+                       "release_name: NA", "\n", "source_url: NA", "\n", 
+                       "organism_biocview: ", scientific_name, "\n", "BSgenomeObjname: ", 
+                       scientific_name, "\n", "seqs_srcdir: ", dirname(twobit_file), 
+                       "\n", "seqfile_name: ", basename(twobit_file), sep = "")
+    seed_dest <- paste(annotation_directory, "/", basename(twobit_file), 
+                       "_", scientific_name, "_seed", sep = "")
+    if (length(circseed) == 0) {
+      writeLines(text = seed_text, con = seed_dest)
+    }
+    if (length(circseed) == 1) {
+      seed_text <- paste(seed_text, "\n", "circ_seqs: \"", 
+                         circseed, "\"", sep = "")
+      writeLines(text = seed_text, con = seed_dest)
+    }
+    if (length(circseed) > 1) {
+      circseed <- paste("c(\"", paste(circseed, collapse = ","), 
+                        "\")", sep = "")
+      circseed <- gsub(circseed, pattern = ",", replacement = "\",\"")
+      cat(seed_text, "\n", "circ_seqs: ", circseed, "\n", 
+          sep = "", file = seed_dest)
+    }
+    unlink(paste(annotation_directory, pkgnm, sep = "/"), 
+           recursive = T)
+    forgeBSgenomeDataPkg(x = seed_dest, destdir = annotation_directory, 
+                         seqs_srcdir = dirname(twobit_file))
+    cat(paste("Creating the BSgenome package --- Done! ", 
+              date(), "\n", sep = ""))
+    cat(paste("Installing the BSgenome package ... ", date(), 
+              "\n", sep = ""))
+    install(paste(annotation_directory, pkgnm, sep = "/"), 
+            upgrade = F)
+    cat(paste("Installing the BSgenome package --- Done! ", 
+              date(), "\n", sep = ""))
+  }
+  if (create_TxDb) {
+    cat(paste("Creating the TxDb object ... ", date(), "\n", 
+              sep = ""))
+    annotation <- makeTxDbFromGFF(file = gtf_file, format = "gtf", 
+                                  chrominfo = seqinfotwob)
+    saveDb(annotation, file = paste(annotation_directory, 
+                                    "/", basename(gtf_file), "_TxDb", sep = ""))
+    cat(paste("Creating the TxDb object --- Done! ", date(), 
+              "\n", sep = ""))
+    cat(paste("Extracting genomic regions ... ", date(), 
+              "\n", sep = ""))
+    genes <- genes(annotation)
+    exons_ge <- exonsBy(annotation, by = "gene")
+    exons_ge <- reduce(exons_ge)
+    cds_gen <- cdsBy(annotation, "gene")
+    cds_ge <- reduce(cds_gen)
+    threeutrs <- reduce(GenomicRanges::setdiff(unlist(threeUTRsByTranscript(annotation)), 
+                                               unlist(cds_ge), ignore.strand = FALSE))
+    fiveutrs <- reduce(GenomicRanges::setdiff(unlist(fiveUTRsByTranscript(annotation)), 
+                                              unlist(cds_ge), ignore.strand = FALSE))
+    introns <- reduce(GenomicRanges::setdiff(unlist(intronsByTranscript(annotation)), 
+                                             unlist(exons_ge), ignore.strand = FALSE))
+    nc_exons <- reduce(GenomicRanges::setdiff(unlist(exons_ge), 
+                                              reduce(c(unlist(cds_ge), fiveutrs, threeutrs)), 
+                                              ignore.strand = FALSE))
+    ov <- findOverlaps(threeutrs, genes)
+    ov <- split(subjectHits(ov), queryHits(ov))
+    threeutrs$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      names(genes)[x]
+    }))
+    ov <- findOverlaps(fiveutrs, genes)
+    ov <- split(subjectHits(ov), queryHits(ov))
+    fiveutrs$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      names(genes)[x]
+    }))
+    ov <- findOverlaps(introns, genes)
+    ov <- split(subjectHits(ov), queryHits(ov))
+    introns$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      names(genes)[x]
+    }))
+    ov <- findOverlaps(nc_exons, genes)
+    ov <- split(subjectHits(ov), queryHits(ov))
+    nc_exons$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      names(genes)[x]
+    }))
+    intergenicRegions <- genes
+    strand(intergenicRegions) <- "*"
+    intergenicRegions <- gaps(reduce(intergenicRegions))
+    intergenicRegions <- intergenicRegions[strand(intergenicRegions) == 
+                                             "*"]
+    cds_tx <- cdsBy(annotation, "tx", use.names = T)
+    txs_gene <- transcriptsBy(annotation, by = "gene")
+    genes_red <- reduce(sort(genes(annotation)))
+    exons_tx <- exonsBy(annotation, "tx", use.names = T)
+    transcripts_db <- transcripts(annotation)
+    intron_names_tx <- intronsByTranscript(annotation, use.names = T)
+    nsns <- exonicParts(annotation)
+    exsss_cds <- exons_tx[names(cds_tx)]
+    chunks <- seq(1, length(cds_tx), by = 20000)
+    if (chunks[length(chunks)] < length(cds_tx)) {
+      chunks <- c(chunks, length(cds_tx))
+    }
+    mapp <- GRangesList()
+    for (i in 1:(length(chunks) - 1)) {
+      if (i != (length(chunks) - 1)) {
+        mapp <- suppressWarnings(c(mapp, pmapToTranscripts(cds_tx[chunks[i]:(chunks[i + 
+                                                                                      1] - 1)], transcripts = exsss_cds[chunks[i]:(chunks[i + 
+                                                                                                                                            1] - 1)])))
+      }
+      if (i == (length(chunks) - 1)) {
+        mapp <- suppressWarnings(c(mapp, pmapToTranscripts(cds_tx[chunks[i]:(chunks[i + 
+                                                                                      1])], transcripts = exsss_cds[chunks[i]:(chunks[i + 
+                                                                                                                                        1])])))
+      }
+    }
+    cds_txscoords <- unlist(mapp)
+    cat(paste("Extracting ids and biotypes ... ", date(), 
+              "\n", sep = ""))
+    trann <- unique(mcols(import.gff2(gtf_file, colnames = c("gene_id", 
+                                                             "gene_biotype", "gene_type", "gene_name", "gene_symbol", 
+                                                             "transcript_id", "transcript_biotype", "transcript_type"))))
+    trann <- trann[!is.na(trann$transcript_id), ]
+    trann <- data.frame(unique(trann), stringsAsFactors = F)
+    if (sum(!is.na(trann$transcript_biotype)) == 0 & sum(!is.na(trann$transcript_type)) == 
+        0) {
+      trann$transcript_biotype <- "no_type"
+    }
+    if (sum(!is.na(trann$transcript_biotype)) == 0) {
+      trann$transcript_biotype <- NULL
+    }
+    if (sum(!is.na(trann$transcript_type)) == 0) {
+      trann$transcript_type <- NULL
+    }
+    if (sum(!is.na(trann$gene_biotype)) == 0 & sum(!is.na(trann$gene_type)) == 
+        0) {
+      trann$gene_type <- "no_type"
+    }
+    if (sum(!is.na(trann$gene_name)) == 0 & sum(!is.na(trann$gene_symbol)) == 
+        0) {
+      trann$gene_name <- "no_name"
+    }
+    if (sum(!is.na(trann$gene_biotype)) == 0) {
+      trann$gene_biotype <- NULL
+    }
+    if (sum(!is.na(trann$gene_type)) == 0) {
+      trann$gene_type <- NULL
+    }
+    if (sum(!is.na(trann$gene_name)) == 0) {
+      trann$gene_name <- NULL
+    }
+    if (sum(!is.na(trann$gene_symbol)) == 0) {
+      trann$gene_symbol <- NULL
+    }
+    colnames(trann) <- c("gene_id", "gene_biotype", "gene_name", 
+                         "transcript_id", "transcript_biotype")
+    trann <- DataFrame(trann)
+    unq_intr <- sort(unique(unlist(intron_names_tx)))
+    names(unq_intr) <- NULL
+    all_intr <- unlist(intron_names_tx)
+    ov <- findOverlaps(unq_intr, all_intr, type = "equal")
+    ov <- split(subjectHits(ov), queryHits(ov))
+    a_nam <- CharacterList(lapply(ov, FUN = function(x) {
+      unique(names(all_intr)[x])
+    }))
+    unq_intr$type = "J"
+    unq_intr$tx_name <- a_nam
+    mat_genes <- match(unq_intr$tx_name, trann$transcript_id)
+    g <- unlist(apply(cbind(1:length(mat_genes), Y = elementNROWS(mat_genes)), 
+                      FUN = function(x) rep(x[1], x[2]), MARGIN = 1))
+    g2 <- split(trann[unlist(mat_genes), "gene_id"], g)
+    unq_intr$gene_id <- CharacterList(lapply(g2, unique))
+    ncrnas <- nc_exons[!nc_exons %over% genes[trann$gene_id[trann$gene_biotype == 
+                                                              "protein_coding"]]]
+    ncisof <- nc_exons[nc_exons %over% genes[trann$gene_id[trann$gene_biotype == 
+                                                             "protein_coding"]]]
+    ifs <- seqinfo(annotation)
+    translations <- as.data.frame(ifs)
+    translations$genetic_code <- "1"
+    translations$genetic_code[rownames(translations) %in% 
+                                c("chrM", "MT", "MtDNA", "mit", "mitochondrion")] <- "2"
+    translations$genetic_code[rownames(translations) %in% 
+                                c("Mito")] <- "3"
+    translations$genetic_code[rownames(translations) %in% 
+                                c("dmel_mitochondrion_genome")] <- "5"
+    circs <- ifs@seqnames[which(ifs@is_circular)]
+    suppressPackageStartupMessages(library(pkgnm, character.only = TRUE))
+    genome <- get(pkgnm)
+    tocheck <- as.character(runValue(seqnames(cds_tx)))
+    tocheck <- cds_tx[!tocheck %in% circs]
+    seqcds <- extractTranscriptSeqs(genome, transcripts = tocheck)
+    cd <- unique(translations$genetic_code[!rownames(translations) %in% 
+                                             circs])
+    trsl <- suppressWarnings(translate(seqcds, genetic.code = getGeneticCode(cd), 
+                                       if.fuzzy.codon = "solve"))
+    trslend <- as.character(narrow(trsl, end = width(trsl), 
+                                   width = 1))
+    stop_inannot <- NA
+    if (names(sort(table(trslend), decreasing = T)[1]) == 
+        "*") {
+      stop_inannot <- "*"
+    }
+    cds_txscoords$gene_id <- trann$gene_id[match(as.vector(seqnames(cds_txscoords)), 
+                                                 trann$transcript_id)]
+    cds_cc <- cds_txscoords
+    strand(cds_cc) <- "*"
+    sta_cc <- resize(cds_cc, width = 1, "start")
+    sta_cc <- unlist(pmapFromTranscripts(sta_cc, exons_tx[seqnames(sta_cc)], 
+                                         ignore.strand = F))
+    sta_cc$gene_id <- trann$gene_id[match(names(sta_cc), 
+                                          trann$transcript_id)]
+    sta_cc <- sta_cc[sta_cc$hit]
+    strand(sta_cc) <- structure(as.vector(strand(transcripts_db)), 
+                                names = transcripts_db$tx_name)[names(sta_cc)]
+    sta_cc$type <- "start_codon"
+    mcols(sta_cc) <- mcols(sta_cc)[, c("exon_rank", "type", 
+                                       "gene_id")]
+    sto_cc <- resize(cds_cc, width = 1, "end")
+    sto_cc <- shift(sto_cc, -2)
+    if (is.na(stop_inannot)) {
+      sto_cc <- resize(trim(shift(sto_cc, 3)), width = 1, 
+                       fix = "end")
+    }
+    sto_cc <- unlist(pmapFromTranscripts(sto_cc, exons_tx[seqnames(sto_cc)], 
+                                         ignore.strand = F))
+    sto_cc <- sto_cc[sto_cc$hit]
+    sto_cc$gene_id <- trann$gene_id[match(names(sto_cc), 
+                                          trann$transcript_id)]
+    strand(sto_cc) <- structure(as.vector(strand(transcripts_db)), 
+                                names = transcripts_db$tx_name)[names(sto_cc)]
+    sto_cc$type <- "stop_codon"
+    mcols(sto_cc) <- mcols(sto_cc)[, c("exon_rank", "type", 
+                                       "gene_id")]
+    cat(paste("Defining most common start/stop codons ... ", 
+              date(), "\n", sep = ""))
+    start_stop_cc <- sort(c(sta_cc, sto_cc))
+    start_stop_cc$transcript_id <- names(start_stop_cc)
+    start_stop_cc$most_up_downstream <- FALSE
+    start_stop_cc$most_frequent <- FALSE
+    df <- cbind.DataFrame(start(start_stop_cc), start_stop_cc$type, 
+                          start_stop_cc$gene_id)
+    colnames(df) <- c("start_pos", "type", "gene_id")
+    upst <- by(df$start_pos, INDICES = df$gene_id, function(x) {
+      x == min(x) | x == max(x)
+    })
+    start_stop_cc$most_up_downstream <- unlist(upst[unique(df$gene_id)])
+    mostfr <- by(df[, c("start_pos", "type")], INDICES = df$gene_id, 
+                 function(x) {
+                   mfreq <- table(x)
+                   x$start_pos %in% as.numeric(names(which(mfreq[, 
+                                                                 1] == max(mfreq[, 1])))) | x$start_pos %in% 
+                     as.numeric(names(which(mfreq[, 2] == max(mfreq[, 
+                                                                    2]))))
+                 })
+    start_stop_cc$most_frequent <- unlist(mostfr[unique(df$gene_id)])
+    names(start_stop_cc) <- NULL
+    mostupstr_tx <- sum(LogicalList(split(start_stop_cc$most_up_downstream, 
+                                          start_stop_cc$transcript_id)))[as.character(seqnames(cds_txscoords))]
+    cds_txscoords$upstr_stasto <- mostupstr_tx
+    mostfreq_tx <- sum(LogicalList(split(start_stop_cc$most_frequent, 
+                                         start_stop_cc$transcript_id)))[as.character(seqnames(cds_txscoords))]
+    cds_txscoords$mostfreq_stasto <- mostfreq_tx
+    cds_txscoords$lentx <- sum(width(exons_tx[as.character(seqnames(cds_txscoords))]))
+    df <- cbind.DataFrame(as.character(seqnames(cds_txscoords)), 
+                          width(cds_txscoords), start(cds_txscoords), cds_txscoords$mostfreq_stasto, 
+                          cds_txscoords$gene_id)
+    colnames(df) <- c("txid", "cdslen", "utr5len", "var", 
+                      "gene_id")
+    repres_freq <- by(df[, c("txid", "cdslen", "utr5len", 
+                             "var")], df$gene_id, function(x) {
+                               x <- x[order(x$var, x$utr5len, x$cdslen, decreasing = T), 
+                               ]
+                               x <- x[x$var == max(x$var), ]
+                               ok <- x$txid[which(x$cdslen == max(x$cdslen) & x$utr5len == 
+                                                    max(x$utr5len) & x$var == max(x$var))][1]
+                               if (length(ok) == 0 | is.na(ok[1])) {
+                                 ok <- x$txid[1]
+                               }
+                               ok
+                             })
+    df <- cbind.DataFrame(as.character(seqnames(cds_txscoords)), 
+                          width(cds_txscoords), start(cds_txscoords), cds_txscoords$upstr_stasto, 
+                          cds_txscoords$gene_id)
+    colnames(df) <- c("txid", "cdslen", "utr5len", "var", 
+                      "gene_id")
+    repres_upstr <- by(df[, c("txid", "cdslen", "utr5len", 
+                              "var")], df$gene_id, function(x) {
+                                x <- x[order(x$var, x$utr5len, x$utr5len, decreasing = T), 
+                                ]
+                                x <- x[x$var == max(x$var), ]
+                                ok <- x$txid[which(x$cdslen == max(x$cdslen) & x$utr5len == 
+                                                     max(x$utr5len) & x$var == max(x$var))][1]
+                                if (length(ok) == 0 | is.na(ok[1])) {
+                                  ok <- x$txid[1]
+                                }
+                                ok
+                              })
+    df <- cbind.DataFrame(as.character(seqnames(cds_txscoords)), 
+                          width(cds_txscoords), start(cds_txscoords), cds_txscoords$upstr_stasto, 
+                          cds_txscoords$gene_id)
+    colnames(df) <- c("txid", "cdslen", "utr5len", "var", 
+                      "gene_id")
+    repres_len5 <- by(df[, c("txid", "cdslen", "utr5len", 
+                             "var")], df$gene_id, function(x) {
+                               x <- x[order(x$utr5len, x$var, x$cdslen, decreasing = T), 
+                               ]
+                               ok <- x$txid[which(x$utr5len == max(x$utr5len) & 
+                                                    x$var == max(x$var))][1]
+                               if (length(ok) == 0 | is.na(ok[1])) {
+                                 ok <- x$txid[1]
+                               }
+                               ok
+                             })
+    cds_txscoords$reprentative_mostcommon <- as.character(seqnames(cds_txscoords)) %in% 
+      unlist(repres_freq)
+    cds_txscoords$reprentative_boundaries <- as.character(seqnames(cds_txscoords)) %in% 
+      unlist(repres_upstr)
+    cds_txscoords$reprentative_5len <- as.character(seqnames(cds_txscoords)) %in% 
+      unlist(repres_len5)
+    unq_stst <- start_stop_cc
+    mcols(unq_stst) <- NULL
+    unq_stst <- sort(unique(unq_stst))
+    ov <- findOverlaps(unq_stst, start_stop_cc, type = "equal")
+    ov <- split(subjectHits(ov), queryHits(ov))
+    unq_stst$type <- CharacterList(lapply(ov, FUN = function(x) {
+      unique(start_stop_cc$type[x])
+    }))
+    unq_stst$transcript_id <- CharacterList(lapply(ov, FUN = function(x) {
+      start_stop_cc$transcript_id[x]
+    }))
+    unq_stst$gene_id <- CharacterList(lapply(ov, FUN = function(x) {
+      unique(start_stop_cc$gene_id[x])
+    }))
+    unq_stst$reprentative_mostcommon <- sum(!is.na(match(unq_stst$transcript_id, 
+                                                         unlist(as(repres_freq, "CharacterList"))))) > 0
+    unq_stst$reprentative_boundaries <- sum(!is.na(match(unq_stst$transcript_id, 
+                                                         unlist(as(repres_upstr, "CharacterList"))))) > 0
+    unq_stst$reprentative_5len <- sum(!is.na(match(unq_stst$transcript_id, 
+                                                   unlist(as(repres_len5, "CharacterList"))))) > 0
+    GTF_annotation <- list(transcripts_db, txs_gene, ifs, 
+                           unq_stst, cds_tx, intron_names_tx, cds_gen, exons_tx, 
+                           nsns, unq_intr, genes, threeutrs, fiveutrs, ncisof, 
+                           ncrnas, introns, intergenicRegions, trann, cds_txscoords, 
+                           translations, pkgnm, stop_inannot)
+    names(GTF_annotation) <- c("txs", "txs_gene", "seqinfo", 
+                               "start_stop_codons", "cds_txs", "introns_txs", "cds_genes", 
+                               "exons_txs", "exons_bins", "junctions", "genes", 
+                               "threeutrs", "fiveutrs", "ncIsof", "ncRNAs", "introns", 
+                               "intergenicRegions", "trann", "cds_txs_coords", 
+                               "genetic_codes", "genome_package", "stop_in_gtf")
+    txs_all <- unique(GTF_annotation$trann$transcript_id)
+    txs_exss <- unique(names(GTF_annotation$exons_txs))
+    txs_notok <- txs_all[!txs_all %in% txs_exss]
+    if (length(txs_notok) > 0) {
+      set.seed(666)
+      cat(paste("Warning: ", length(txs_notok), " txs with incorrect/unspecified exon boundaries - e.g. trans-splicing events, examples: ", 
+                paste(txs_notok[sample(1:length(txs_notok), 
+                                       size = min(3, length(txs_notok)), replace = F)], 
+                      collapse = ", "), " - ", date(), "\n", sep = ""))
+    }
+    save(GTF_annotation, file = paste(annotation_directory, 
+                                      "/", basename(gtf_file), "_Rannot", sep = ""))
+    cat(paste("Rannot object created!   ", date(), "\n", 
+              sep = ""))
+    if (export_bed_tables_TxDb == T) {
+      cat(paste("Exporting annotation tables ... ", date(), 
+                "\n", sep = ""))
+      for (bed_file in c("fiveutrs", "threeutrs", "ncIsof", 
+                         "ncRNAs", "introns", "cds_txs_coords")) {
+        bf <- GTF_annotation[[bed_file]]
+        bf_t <- bf
+        if (length(bf) > 0) {
+          bf_t <- data.frame(chromosome = seqnames(bf), 
+                             start = start(bf), end = end(bf), name = ".", 
+                             score = width(bf), strand = strand(bf))
+          meccole <- mcols(bf)
+          for (mecc in names(meccole)) {
+            if (is(meccole[, mecc], "CharacterList") | 
+                is(meccole[, mecc], "NumericList") | is(meccole[, 
+                                                                mecc], "IntegerList")) {
+              meccole[, mecc] <- paste(meccole[, mecc], 
+                                       collapse = ";")
+            }
+          }
+          bf_t <- cbind.data.frame(bf_t, meccole)
+        }
+        write.table(bf_t, file = paste(annotation_directory, 
+                                       "/", bed_file, "_similbed.bed", sep = ""), 
+                    sep = "\t", quote = FALSE, row.names = FALSE, 
+                    col.names = F)
+      }
+      write.table(GTF_annotation$trann, file = paste(annotation_directory, 
+                                                     "/table_gene_tx_IDs", sep = ""), sep = "\t", 
+                  quote = FALSE, row.names = FALSE)
+      seqi <- as.data.frame(GTF_annotation$seqinfo)
+      seqi$chromosome <- rownames(seqi)
+      write.table(seqi, file = paste(annotation_directory, 
+                                     "/seqinfo", sep = ""), sep = "\t", quote = FALSE, 
+                  row.names = FALSE)
+      gen_cod <- as.data.frame(GTF_annotation$genetic_codes)
+      gen_cod$chromosome <- rownames(gen_cod)
+      write.table(gen_cod, file = paste(annotation_directory, 
+                                        "/genetic_codes", sep = ""), sep = "\t", quote = FALSE, 
+                  row.names = FALSE)
+      cat(paste("Exporting annotation tables --- Done! ", 
+                date(), "\n", sep = ""))
+    }
+  }
+} 
+
+### SET DIRECTORY 
+setwd("Y:/Omics/RiboSeq/LNA_Oligo_Depletion/") 
+
+### PREPARE ANNOTATION FILE _________________________________________________________________________________________ 
+prepare_annotation_files(annotation_directory = "Y:/Omics/RiboSeq/LNA_Oligo_Depletion/Annotations",
+                         twobit_file = "Y:/Omics/Annotations_RNASeq/genome.2bit",
+                         gtf_file = "Y:/Omics/RiboSeq/LNA_Oligo_Depletion/Annotations/Araport11_GTF_genes_transposons.20241001.gtf",
+                         scientific_name = "Arabidopsis.thaliana",
+                         annotation_name = "Araport11")
+
+### RUN RIBOSEQC _____________________________________________________________________________________________________ 
+### BUILD PATH TO BAM FILES 
+bamFiles <- dir(path = "Y:/Omics/RiboSeq/LNA_Oligo_Depletion/STAR_Output/",
+                pattern = ".*Coord.out.bam",
+                full.names = TRUE)
+
+RiboseQC_analysis(annotation_file = "Y:/Omics/RiboSeq/LNA_Oligo_Depletion/Annotations/Araport11_GTF_genes_transposons.20241001.gtf_Rannot",
+                  bam_files = bamFiles,
+                  write_tmp_files = FALSE,
+                  sample_names = gsub("\\.Aligned\\..*bam$","", bamFiles),
+                  extended_report = FALSE,
+                  stranded = FALSE)
+
+#create HTML report _________________________________________________________________________________________________
+setwd("Y:/Omics/RiboSeq/LNA_Oligo_Depletion/STAR_Output/")
+create_html_report(input_files = list.files(pattern = "results", path = "."),
+                   input_sample_names = c("R_F1","R_F2", "R_LN1", "R_LN2", "R_P1", "R_P2", "R_wd1","R_wd2"),
+                   output_file = "Y:/Omics/RiboSeq/LNA_Oligo_Depletion/STAR_Output/RiboseQC_report.html",
+                   extended = FALSE)
+
+# BUILD METADATA #####################################################################################################
+#Generate sample table _______________________________________________________________________________________________ 
+sample.table.dep <- data.frame(sample = colnames(STAR.counts.dep))
+rownames(sample.table.dep) <- sample.table.dep$sample
+sample.table.dep$method <- rep(c("F", "LNA", "P", "without"), each = 2) 
+sample.table.dep$replicate <- gsub("^RPFs_.*_", "", sample.table.dep$sample)
+
+dds.depletion <- DESeqDataSetFromMatrix(STAR.counts.dep,
+                                      colData = sample.table.dep,
+                                      design = ~ replicate+method)
+
+# DATA EXPLORATION ###################################################################################################
+
+#Perform Variance Stabilized Transformation on the count data to equalize variances across means
+
+#Use vst for larger datasets, fast
+dds.depletion.vst <- vst(dds.depletion)
+#Use rlog for smaller datasets or large sequencing depth differences between samples, slower
+dds.depletion.rlog <- rlog(dds.depletion)
+
+#Visualize mean standard deviation to decide which transformation to use (flatter = better)
+#Each plot is printed to a file for reference after drawing
+#Combined Data
+meanSdPlot(assay(dds.depletion), ranks = FALSE)
+dev.print(pdf, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Plots/DataExploration/meanSd_raw.pdf")
+meanSdPlot(assay(dds.depletion.vst), ranks = FALSE)
+dev.print(pdf, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Plots/DataExploration/meanSd_vst.pdf")
+meanSdPlot(assay(dds.depletion.rlog), ranks = FALSE)
+dev.print(pdf, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Plots/DataExploration/meanSd_rlog.pdf")
+
+#Principal Component Analysis ____________________________________________________________________________________________
+
+#modify DESeq's plotPCA function to gain access to more PCs than just the first two
+plotPCA.ext <- function (object, intgroup = "treatment", ntop = 500, 
+                         returnData = FALSE) 
+{
+  rv <- rowVars(assay(object))
+  select <- order(rv, decreasing = TRUE)[seq_len(min(ntop, 
+                                                     length(rv)))]
+  pca <- prcomp(t(assay(object)[select, ]))
+  percentVar <- pca$sdev^2/sum(pca$sdev^2)
+  if (!all(intgroup %in% names(colData(object)))) {
+    stop("the argument 'intgroup' should specify columns of colData(dds)")
+  }
+  intgroup.df <- as.data.frame(colData(object)[, intgroup, 
+                                               drop = FALSE])
+  group <- if (length(intgroup) > 1) {
+    factor(apply(intgroup.df, 1, paste, collapse = ":"))
+  }
+  else {
+    colData(object)[[intgroup]]
+  }
+  d <- data.frame(PC1 = pca$x[, 1], PC2 = pca$x[, 2], PC3 = pca$x[, 3], PC4 = pca$x[, 4], PC5 = pca$x[, 5], PC6 = pca$x[, 6], group = group, 
+                  intgroup.df, name = colnames(object))
+  if (returnData) {
+    attr(d, "percentVar") <- percentVar[1:6]
+    return(d)
+  }
+  ggplot(data = d, aes_string(x = "PC1", y = "PC2", color = "group")) + 
+    geom_point(size = 3) + xlab(paste0("PC1: ", round(percentVar[1] * 
+                                                        100), "% variance")) + ylab(paste0("PC2: ", round(percentVar[2] * 
+                                                                                                            100), "% variance")) + coord_fixed()
+} 
+
+#Generate and export PCA data based on preferred stabilization
+pcaData.depletion <- plotPCA.ext(dds.depletion.vst, intgroup = "method", returnData = TRUE) 
+
+
+pcaData.depletion$method <- rep(c("F","LNA", "P", "without"), each = 2)
+
+#Select colors 
+selected_colors <- MetBrewer::met.brewer("Morgenstern", n = 8)[c(1,3,7,8)]
+
+#Plot PCAs 1-6 in ggplot and save them
+percentVar <- round(100 * attr(pcaData.depletion, "percentVar"))
+pcs <- data.frame("a" = c("PC1", "PC3", "PC5"), "b" = c("PC2", "PC4", "PC6"))
+#Plot PCAs 1-6 in ggplot and save them
+percentVar <- round(100 * attr(pcaData.depletion, "percentVar"))
+pcs <- data.frame("a" = c("PC1", "PC3", "PC5"), "b" = c("PC2", "PC4", "PC6"))
+for (l in c(1:3)) {
+  ggplot(pcaData.depletion, aes(.data[[pcs[l,1]]], .data[[pcs[l,2]]]))+
+    geom_point(size = 3, aes(color = method))+
+    #geom_text(aes(label = gsub("_C.*$|_T.*$","",name)), size = 2.5, nudge_y = -0.8)+
+    xlab(paste0(pcs[l,1],": ", percentVar[l+(l-1)], "% variance")) +
+    ylab(paste0(pcs[l,2], ": ", percentVar[l+l], "% variance")) +
+    scale_color_manual(values = selected_colors)+
+    ggtitle("Principal Component Analysis")+
+    theme_light(base_size = 9)+
+    theme(axis.text = element_text(color = "black"), legend.position = "right")
+  
+  #Save PCA plot
+  ggsave(filename = paste0("Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/PCA_", l+(l-1), "+", l+l, ".pdf"), width = 12, height = 12, units = "cm")
+}
+
+#Run DESeq2 on the dataset
+dds.depletion <- DESeq(dds.depletion)
+
+#Normalize counts
+dds.depletion <- estimateSizeFactors(dds.depletion)
+
+#Extract results with applied filters for p-value and log2 foldchange threshold
+#Set p-value (set the variable here, so the results function and any manual filtering later rely on the same value)
+p.val <- 0.05
+fc.limit <- 1
+
+#Extract results comparing every depletion approach against undepleted samples (contrast needs 3 values: Which independent variable to use, Numerator=Treatment, Denominator=Control)
+#DNA-Oligos Frankfurt
+res_depletion_F <- results(dds.depletion, alpha = p.val, contrast = c("method", "F", "without"))
+
+#Print summary
+summary(res_depletion_F)
+
+#Convert to dataframe
+res_depletion_F_df <- data.frame(res_depletion_F)
+
+#Write results to file
+write.csv(res_depletion_F_df, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Counts/FoldChanges/Foldchanges_depletion_F.csv", quote = FALSE)
+
+#Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
+genes.sig_F <- subset(res_depletion_F_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
+write.csv(genes.sig_F, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Counts/FoldChanges/Foldchanges_sig_F.csv", quote = FALSE)
+write.table(genes.sig_F, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Counts/FoldChanges/Significantly_regulated_genes_F.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
+
+#Add Metadata to significantly regulated genes and write out
+genes.sig_F.meta <- genes.sig_F
+genes.sig_F.meta$ID <- rownames(genes.sig_F.meta)
+Gene.Metadata <- read.table("Y:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
+genes.sig_F.meta <- merge(genes.sig_F.meta, Gene.Metadata, all.x = TRUE, all.y = FALSE)
+
+#DNA-Oligos Potsdam
+res_depletion_P <- results(dds.depletion, alpha = p.val, contrast = c("method", "P", "without"))
+
+#Print summary
+summary(res_depletion_P)
+
+#Convert to dataframe
+res_depletion_P_df <- data.frame(res_depletion_P)
+
+#Write results to file
+write.csv(res_depletion_P_df, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Counts/FoldChanges/Foldchanges_depletion_P.csv", quote = FALSE)
+
+#Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
+genes.sig_P <- subset(res_depletion_P_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
+write.csv(genes.sig_P, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Counts/FoldChanges/Foldchanges_sig_P.csv", quote = FALSE)
+write.table(genes.sig_P, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Counts/FoldChanges/Significantly_regulated_genes_P.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
+
+#Add Metadata to significantly regulated genes and write out
+genes.sig_P.meta <- genes.sig_P
+genes.sig_P.meta$ID <- rownames(genes.sig_P.meta)
+Gene.Metadata <- read.table("Y:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
+genes.sig_P.meta <- merge(genes.sig_P.meta, Gene.Metadata, all.x = TRUE, all.y = FALSE)
+
+#LNAs
+res_depletion_L <- results(dds.depletion, alpha = p.val, contrast = c("method", "LNA", "without"))
+
+#Print summary
+summary(res_depletion_L)
+
+#Convert to dataframe
+res_depletion_L_df <- data.frame(res_depletion_L)
+
+#Write results to file
+write.csv(res_depletion_L_df, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Counts/FoldChanges/Foldchanges_depletion_L.csv", quote = FALSE)
+
+#Write only significantly regulated genes to file (log2FC > 1 $ p.adj < 0.05)
+genes.sig_L <- subset(res_depletion_L_df, abs(log2FoldChange) >= fc.limit & padj <= p.val)
+write.csv(genes.sig_L, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Counts/FoldChanges/Foldchanges_sig_L.csv", quote = FALSE)
+write.table(genes.sig_L, "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Counts/FoldChanges/Significantly_regulated_genes_L.txt", quote = TRUE, row.names = FALSE, sep = "\t" )
+
+#Add Metadata to significantly regulated genes and write out
+genes.sig_L.meta <- genes.sig_L
+genes.sig_L.meta$ID <- rownames(genes.sig_L.meta)
+Gene.Metadata <- read.table("Y:/Omics/RiboSeq/ClinoNAA_Experiment/Riboseq/Arabidopsis_Genes_Metadata.tsv", header = TRUE)
+genes.sig_L.meta <- merge(genes.sig_L.meta, Gene.Metadata, all.x = TRUE, all.y = FALSE)
+
+#Plot log2FoldChanges from different depletion approaches in several scatterplots ________________________________________________________________________
+
+#Build data frame containing foldchanges and p-values for all transcripts 
+transcripts <- as.data.frame(counts(dds.depletion, normalized = TRUE))
+transcripts.F <- transcripts[, c(1,2,7,8)]
+transcripts.F$averageF <- (transcripts.F$RPFs_F_1 + transcripts.F$RPFs_F_2)/2
+transcripts.F$averageW <- (transcripts.F$RPFs_without_depl_1 + transcripts.F$RPFs_without_depl_2)/2 
+transcripts.F$ID <- rownames(transcripts.F)
+transcripts.F$color <- "#98768EFF"
+transcripts.F$color[transcripts.F$ID %in% rownames(genes.sig_F)] <- "#DB8872FF"
+
+Oligo_F <- ggplot(data = transcripts.F, aes(x = transcripts.F$averageF, y = transcripts.F$averageW))+
+  geom_point(color = transcripts.F$color)+
+  scale_x_log10()+
+  scale_y_log10()+
+  #geom_smooth(method = "lm", se = FALSE, color = "grey")+
+  #geom_abline(intercept = 0, slope = 1)+
+  labs(title = "Normalized Counts from Oligo_F depleted and undepleted libraries", x = "Counts Oligo_F depleted libraries", y = "Counts undepleted libraries")+
+  #theme(plot.margin = unit(c(1, 3, 1, 1), "cm"))+
+  theme_minimal()+
+  theme_light(base_size = 9)
+#Save volcano plot to file
+ggsave(
+  "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Plots/Scatterplot_Oligo_F1_vs_undepleted.pdf",
+  plot = Oligo_F,
+  device = cairo_pdf,  # Use cairo_pdf for better text handling
+  width = 21,          # Set the width
+  height = 17,         # Set the height
+  units = "cm"
+)
+
+transcripts.P <- transcripts[, c(5,6,7,8)]
+transcripts.P$averageP <- (transcripts.P$RPFs_P_1 + transcripts.P$RPFs_P_2)/2
+transcripts.P$averageW <- (transcripts.P$RPFs_without_depl_1 + transcripts.F$RPFs_without_depl_2)/2 
+transcripts.P$ID <- rownames(transcripts.P)
+transcripts.P$color <- "#98768EFF"
+transcripts.P$color[transcripts.P$ID %in% rownames(genes.sig_P)] <- "#FFC680FF"
+
+Oligo_P <- ggplot(data = transcripts.P, aes(x = transcripts.P$averageP, y = transcripts.P$averageW))+
+  geom_point(color = transcripts.P$color)+
+  scale_x_log10()+
+  scale_y_log10()+
+  #geom_smooth(method = "lm", se = FALSE, color = "grey")+
+  #geom_abline(intercept = 0, slope = 1)+
+  labs(title = "Normalized Counts from Oligo_P depleted and undepleted libraries", x = "Counts Oligo_P depleted libraries", y = "Counts undepleted libraries")+
+  #theme(plot.margin = unit(c(1, 3, 1, 1), "cm"))+
+  theme_minimal()+
+  theme_light(base_size = 9)
+ggsave(
+  "Y:/Omics/_GitHub_Repositories/Franzi/PolysomeEnrichment/rRNA_depletion_approaches/Plots/Scatterplot_Oligo_P1_vs_undepleted.pdf",
+  plot = Oligo_P,
+  device = cairo_pdf,  # Use cairo_pdf for better text handling
+  width = 21,          # Set the width
+  height = 17,         # Set the height
+  units = "cm"
+)
